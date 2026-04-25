@@ -576,7 +576,6 @@ npm run build
 **B.Tech Computer Science Engineering**
 Islamic University of Science and Technology (IUST), Srinagar, Kashmir
 
-*GATE CSE 2026 Qualified · Hackathon Finalist · Full Stack Developer*
 
 | | |
 |---|---|
