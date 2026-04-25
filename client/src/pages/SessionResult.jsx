@@ -1,0 +1,174 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { Bar, BarChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import Loader from '../components/Loader';
+import ScoreCard from '../components/ScoreCard';
+import api from '../utils/api';
+import { aggregateTips, emotionValue, formatDate, gradeTone } from '../utils/helpers';
+
+const buildExpressionSummary = (session) => {
+  const snapshots = session?.emotionTimeline || [];
+  if (!snapshots.length) {
+    return {
+      headline: 'Expression feedback unavailable',
+      summary: 'No facial-expression snapshots were captured during this session, so the expression score could not be interpreted in a meaningful way.',
+      dominantEmotion: 'N/A',
+      positiveRate: 0,
+      totalSnapshots: 0
+    };
+  }
+
+  const positiveEmotions = ['happy', 'neutral'];
+  const frequency = snapshots.reduce((acc, item) => {
+    const key = String(item.emotion || '').toLowerCase();
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+  const dominantEmotion = Object.entries(frequency).sort((a, b) => b[1] - a[1])[0]?.[0] || 'neutral';
+  const positiveCount = snapshots.filter((item) => positiveEmotions.includes(String(item.emotion || '').toLowerCase())).length;
+  const positiveRate = Math.round((positiveCount / snapshots.length) * 100);
+
+  let headline = 'Expression needs more consistency';
+  let summary = `Your camera presence leaned mostly ${dominantEmotion}. Try to keep a calm, engaged expression and avoid letting tension sit on your face for too long.`;
+
+  if (session.expressionScore >= 70) {
+    headline = 'Strong expression control';
+    summary = `You maintained a steady, interview-friendly expression for most of the session. ${dominantEmotion === 'happy' ? 'Your visible positivity helped.' : 'Your neutral composure worked in your favor.'}`;
+  } else if (session.expressionScore >= 40) {
+    headline = 'Mostly steady expression';
+    summary = `Your expression was reasonably controlled, but it drifted at times. Keeping your face relaxed and responsive more consistently would lift the overall impression.`;
+  }
+
+  if (dominantEmotion === 'fear' || dominantEmotion === 'sad' || dominantEmotion === 'angry' || dominantEmotion === 'disgust') {
+    summary = `The dominant expression looked ${dominantEmotion}, which can read as nervous or closed-off in an interview. Focus on relaxing your jaw, softening your eyes, and returning to a neutral listening face between answers.`;
+  }
+
+  return {
+    headline,
+    summary,
+    dominantEmotion,
+    positiveRate,
+    totalSnapshots: snapshots.length
+  };
+};
+
+const SessionResult = () => {
+  const { id } = useParams();
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get(`/sessions/${id}`).then(({ data }) => setSession(data.session)).finally(() => setLoading(false));
+  }, [id]);
+
+  const breakdown = useMemo(() => session ? [
+    { name: 'Expression', score: session.expressionScore },
+    { name: 'Speech', score: session.speechScore },
+    { name: 'Content', score: session.contentScore }
+  ] : [], [session]);
+  const expressionSummary = useMemo(() => buildExpressionSummary(session), [session]);
+
+  if (loading) return <main className="mx-auto max-w-7xl px-4 py-8"><Loader label="Loading result..." /></main>;
+  if (!session) return <main className="mx-auto max-w-7xl px-4 py-8">Session not found.</main>;
+
+  const timeline = session.emotionTimeline.map((item, index) => ({ index: index + 1, emotion: item.emotion, value: emotionValue(item.emotion), confidence: item.confidence }));
+
+  return (
+    <main className="mx-auto max-w-7xl px-4 py-8">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-black text-slate-950 dark:text-white">Session Result</h1>
+          <p className="text-sm text-slate-500">{session.type} · {session.difficulty} · {formatDate(session.createdAt)}</p>
+        </div>
+        <div className="flex gap-2">
+          <Link className="btn-primary" to="/interview">Practice Again</Link>
+          <Link className="btn-secondary" to="/dashboard">Go to Dashboard</Link>
+          <button className="btn-secondary" onClick={() => navigator.share?.({ title: 'IntervueAI Result', text: `I scored ${session.finalScore}% (${session.grade}) on IntervueAI.` })}>Share Result</button>
+        </div>
+      </div>
+      <div className="grid gap-4 md:grid-cols-4">
+        <ScoreCard label="Overall" value={`${session.finalScore}%`} grade={session.grade} />
+        <ScoreCard label="Expression" value={`${session.expressionScore}%`} />
+        <ScoreCard label="Speech" value={`${session.speechScore}%`} />
+        <ScoreCard label="Content" value={`${session.contentScore}%`} />
+      </div>
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <div className="panel p-4">
+          <h2 className="mb-4 font-bold text-slate-950 dark:text-white">Breakdown</h2>
+          <div className="h-72">
+            <ResponsiveContainer>
+              <BarChart data={breakdown}>
+                <XAxis dataKey="name" />
+                <YAxis domain={[0, 100]} />
+                <Tooltip />
+                <Bar dataKey="score" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="panel p-4">
+          <h2 className="mb-4 font-bold text-slate-950 dark:text-white">Emotion Timeline</h2>
+          <div className="h-72">
+            <ResponsiveContainer>
+              <LineChart data={timeline}>
+                <XAxis dataKey="index" />
+                <YAxis domain={[0, 7]} />
+                <Tooltip formatter={(value, name, item) => item.payload.emotion} />
+                <Line dataKey="value" stroke="#34d399" strokeWidth={3} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+      <section className="mt-6 panel p-4">
+        <h2 className="mb-3 font-bold text-slate-950 dark:text-white">Expression Feedback</h2>
+        <p className="text-sm font-semibold text-slate-900 dark:text-white">{expressionSummary.headline}</p>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{expressionSummary.summary}</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-md border border-white/10 bg-white/5 p-3">
+            <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Dominant emotion</div>
+            <div className="mt-1 text-sm font-semibold capitalize text-slate-900 dark:text-white">{expressionSummary.dominantEmotion}</div>
+          </div>
+          <div className="rounded-md border border-white/10 bg-white/5 p-3">
+            <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Positive frames</div>
+            <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{expressionSummary.positiveRate}%</div>
+          </div>
+          <div className="rounded-md border border-white/10 bg-white/5 p-3">
+            <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Snapshots captured</div>
+            <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{expressionSummary.totalSnapshots}</div>
+          </div>
+        </div>
+      </section>
+      <section className="mt-6 panel p-4">
+        <h2 className="mb-3 font-bold text-slate-950 dark:text-white">Highlights</h2>
+        <p className={`text-sm font-semibold ${gradeTone(session.grade)}`}>Grade {session.grade}</p>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Strongest answer: {session.strongestAnswer?.questionId?.text || 'Not available'}</p>
+        <p className="text-sm text-slate-600 dark:text-slate-300">Weakest answer: {session.weakestAnswer?.questionId?.text || 'Not available'}</p>
+      </section>
+      <section className="mt-6 panel p-4">
+        <h2 className="mb-3 font-bold text-slate-950 dark:text-white">Improvement Tips</h2>
+        <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+          {aggregateTips(session.answers).map((tip) => <li key={tip}>• {tip}</li>)}
+        </ul>
+      </section>
+      <section className="mt-6 space-y-4">
+        {session.answers.map((answer, answerIndex) => (
+          <article key={answer._id} className="panel p-4">
+            <h3 className="font-bold text-slate-950 dark:text-white">{answerIndex + 1}. {answer.questionId?.text}</h3>
+            <p className="mt-3 text-sm text-slate-500">{answer.transcript}</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <ScoreCard label="Relevance" value={answer.relevanceScore} />
+              <ScoreCard label="Fluency" value={answer.fluencyScore} />
+              <ScoreCard label="Clarity" value={answer.clarityScore} />
+            </div>
+            <p className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">Sample better answer</p>
+            <p className="text-sm text-slate-600 dark:text-slate-300">{answer.sampleAnswer}</p>
+          </article>
+        ))}
+      </section>
+    </main>
+  );
+};
+
+export default SessionResult;
