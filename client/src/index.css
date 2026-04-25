@@ -1,0 +1,180 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  background: #f7f8ff;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 15% 12%, rgba(108, 99, 255, 0.13), transparent 30rem),
+    radial-gradient(circle at 85% 0%, rgba(78, 205, 196, 0.15), transparent 26rem),
+    linear-gradient(180deg, #fbfcff 0%, #f4f2ff 46%, #eefcff 100%);
+  color: #111827;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.dark body {
+  background:
+    radial-gradient(circle at 15% 12%, rgba(108, 99, 255, 0.22), transparent 30rem),
+    radial-gradient(circle at 85% 0%, rgba(78, 205, 196, 0.16), transparent 26rem),
+    linear-gradient(180deg, #0f0f1a 0%, #10101e 46%, #0b0b13 100%);
+}
+
+.focus-ring {
+  @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2;
+  --tw-ring-color: rgba(108, 99, 255, 0.75);
+  --tw-ring-offset-color: #f7f8ff;
+}
+
+.dark .focus-ring {
+  --tw-ring-offset-color: #0f0f1a;
+}
+
+.panel {
+  @apply rounded-lg transition duration-300;
+  border: 1px solid rgba(108, 99, 255, 0.16);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.88), rgba(248, 250, 252, 0.76)),
+    rgba(255, 255, 255, 0.76);
+  box-shadow:
+    0 20px 70px rgba(76, 79, 124, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 0 0 1px rgba(108, 99, 255, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.dark .panel {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(145deg, rgba(26, 26, 46, 0.86), rgba(20, 20, 36, 0.76)),
+    rgba(26, 26, 46, 0.82);
+  box-shadow:
+    0 20px 70px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 0 1px rgba(108, 99, 255, 0.08);
+}
+
+.panel:hover {
+  border-color: rgba(108, 99, 255, 0.34);
+  box-shadow:
+    0 24px 90px rgba(0, 0, 0, 0.42),
+    0 0 34px rgba(108, 99, 255, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+}
+
+.btn-primary {
+  @apply focus-ring inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-bold text-white transition duration-300 disabled:cursor-not-allowed disabled:opacity-60;
+  background: linear-gradient(135deg, #6c63ff 0%, #4ecdc4 100%);
+  box-shadow: 0 14px 32px rgba(108, 99, 255, 0.28);
+}
+
+.btn-primary:hover {
+  box-shadow: 0 18px 42px rgba(78, 205, 196, 0.24), 0 0 0 1px rgba(255, 255, 255, 0.12);
+  transform: translateY(-2px);
+}
+
+.btn-secondary {
+  @apply focus-ring inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-bold text-slate-800 transition duration-300;
+  border: 1px solid rgba(108, 99, 255, 0.18);
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.dark .btn-secondary {
+  @apply text-slate-100;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.btn-secondary:hover {
+  border-color: rgba(78, 205, 196, 0.34);
+  background: rgba(255, 255, 255, 0.095);
+  transform: translateY(-2px);
+}
+
+.input {
+  @apply focus-ring w-full rounded-md px-3 py-2 text-sm text-slate-950 placeholder:text-slate-500 transition duration-300;
+  border: 1px solid rgba(108, 99, 255, 0.18);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.dark .input {
+  @apply text-slate-100;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 15, 26, 0.72);
+}
+
+.input:focus {
+  border-color: rgba(108, 99, 255, 0.55);
+  box-shadow: 0 0 0 4px rgba(108, 99, 255, 0.14);
+}
+
+.gradient-text,
+main h1,
+main h2 {
+  background: linear-gradient(135deg, #141427 0%, #6c63ff 42%, #16a7a0 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.dark .gradient-text,
+.dark main h1,
+.dark main h2 {
+  background: linear-gradient(135deg, #ffffff 0%, #b7b2ff 38%, #4ecdc4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+main {
+  animation: page-fade 520ms ease both;
+}
+
+::selection {
+  background: rgba(108, 99, 255, 0.45);
+  color: #ffffff;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f0f1a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #6c63ff, #4ecdc4);
+  border: 2px solid #0f0f1a;
+  border-radius: 999px;
+}
+
+* {
+  scrollbar-color: #6c63ff #0f0f1a;
+  scrollbar-width: thin;
+}
+
+@keyframes page-fade {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
