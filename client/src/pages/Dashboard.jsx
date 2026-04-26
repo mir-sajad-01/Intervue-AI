@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 import { Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Download, FileText } from 'lucide-react';
 import Loader from '../components/Loader';
+import ReportDateRangePicker from '../components/ReportDateRangePicker';
 import ScoreCard from '../components/ScoreCard';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { formatDate } from '../utils/helpers';
+import { generateProgressReportPdf, resolveReportRange, toDateInputValue } from '../utils/report';
 
 const colors = ['#06b6d4', '#34d399', '#f59e0b', '#fb7185', '#8b5cf6', '#64748b', '#ef4444'];
 
@@ -14,6 +18,11 @@ const Dashboard = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const defaultRange = resolveReportRange({ preset: '30d' });
+  const [reportPreset, setReportPreset] = useState('30d');
+  const [reportFrom, setReportFrom] = useState(defaultRange.from || toDateInputValue(new Date()));
+  const [reportTo, setReportTo] = useState(defaultRange.to || toDateInputValue(new Date()));
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (checkingAuth || !user) return;
@@ -24,6 +33,40 @@ const Dashboard = () => {
       .catch((err) => setError(err.response?.data?.message || 'Could not load dashboard'))
       .finally(() => setLoading(false));
   }, [checkingAuth, user]);
+
+  const downloadReport = async () => {
+    if (!user) return;
+    if (reportPreset === 'custom' && (!reportFrom || !reportTo)) {
+      toast.error('Choose both dates for a custom report range');
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const rangeMeta = resolveReportRange({ preset: reportPreset, from: reportFrom, to: reportTo });
+      const [summaryResponse, sessionsResponse] = await Promise.all([
+        api.get('/reports/summary', { params: rangeMeta.query }),
+        api.get('/sessions', { params: { limit: 1000, sortBy: 'date', order: 'asc', ...rangeMeta.query } })
+      ]);
+
+      if (!sessionsResponse.data.sessions?.length) {
+        toast.error('No sessions found for this period');
+        return;
+      }
+
+      generateProgressReportPdf({
+        userName: user.name,
+        rangeMeta,
+        summaryPayload: summaryResponse.data,
+        sessions: sessionsResponse.data.sessions
+      });
+      toast.success('Progress report downloaded');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not generate report');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (loading) return <main className="mx-auto max-w-7xl px-4 py-8"><Loader label="Loading dashboard..." /></main>;
 
@@ -42,6 +85,34 @@ const Dashboard = () => {
         <ScoreCard label="Best Score" value={`${stats.bestScore}%`} />
         <ScoreCard label="Streak" value={`${stats.streak}d`} />
       </div>
+      <section className="mt-6 panel p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="max-w-2xl">
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
+              <FileText size={14} />
+              Download Progress Report
+            </div>
+            <h2 className="text-xl font-black text-slate-950 dark:text-white">Export a polished PDF summary of your interview practice</h2>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-300">
+              Choose a time period and download a branded report with scores, trends, session tables, question performance, and repeated coaching tips.
+            </p>
+          </div>
+          <button className="btn-primary" onClick={downloadReport} disabled={exporting}>
+            <Download size={16} />
+            {exporting ? 'Preparing PDF...' : 'Download My Progress Report'}
+          </button>
+        </div>
+        <div className="mt-5">
+          <ReportDateRangePicker
+            preset={reportPreset}
+            from={reportFrom}
+            to={reportTo}
+            onPresetChange={setReportPreset}
+            onFromChange={setReportFrom}
+            onToChange={setReportTo}
+          />
+        </div>
+      </section>
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <div className="panel p-4 lg:col-span-2">
           <h2 className="mb-4 font-bold text-slate-950 dark:text-white">Score Trend</h2>

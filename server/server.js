@@ -12,6 +12,7 @@ import authRoutes from './routes/authRoutes.js';
 import emotionRoutes from './routes/emotionRoutes.js';
 import feedbackRoutes from './routes/feedbackRoutes.js';
 import questionRoutes from './routes/questionRoutes.js';
+import reportRoutes from './routes/reportRoutes.js';
 import sessionRoutes, { dashboardStatsHandler } from './routes/sessionRoutes.js';
 
 dotenv.config();
@@ -45,6 +46,7 @@ app.use('/api/sessions', sessionRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/emotion', emotionRoutes);
 app.use('/api/feedback', feedbackRoutes);
+app.use('/api/reports', reportRoutes);
 app.get('/api/dashboard/stats', ...dashboardStatsHandler);
 
 app.use(notFound);

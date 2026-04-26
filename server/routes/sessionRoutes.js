@@ -1,6 +1,7 @@
 import express from 'express';
 import { body, param, query } from 'express-validator';
 import {
+  deleteSession,
   endSession,
   getDashboardStats,
   getSessionById,
@@ -43,14 +44,17 @@ router.post(
 );
 
 router.post('/:id/end', [param('id').isMongoId(), body('duration').optional().isNumeric()], validate, endSession);
+router.delete('/:id', [param('id').isMongoId()], validate, deleteSession);
 
 router.get(
   '/',
   [
     query('page').optional().isInt({ min: 1 }),
-    query('limit').optional().isInt({ min: 1, max: 50 }),
+    query('limit').optional().isInt({ min: 1, max: 1000 }),
     query('type').optional({ checkFalsy: true }).isIn(['HR', 'Technical', 'Behavioural', 'Mixed', 'Custom']),
     query('difficulty').optional({ checkFalsy: true }).isIn(['Easy', 'Medium', 'Hard']),
+    query('from').optional().isISO8601(),
+    query('to').optional().isISO8601(),
     query('sortBy').optional().isIn(['date', 'score']),
     query('order').optional().isIn(['asc', 'desc'])
   ],

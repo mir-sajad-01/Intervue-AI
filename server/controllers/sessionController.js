@@ -1,16 +1,8 @@
 import Question from '../models/Question.js';
 import Session from '../models/Session.js';
+import SessionSnapshot from '../models/SessionSnapshot.js';
 import { evaluateAnswer, generateInterviewQuestions } from '../utils/gemini.js';
-
-const gradeFor = (score) => {
-  if (score >= 90) return 'A';
-  if (score >= 75) return 'B';
-  if (score >= 60) return 'C';
-  if (score >= 45) return 'D';
-  return 'F';
-};
-
-const average = (items) => (items.length ? items.reduce((sum, item) => sum + item, 0) / items.length : 0);
+import { average, buildDateRangeQuery, gradeFor } from '../utils/reporting.js';
 
 const computeScores = (session) => {
   const positive = ['happy', 'neutral'];
@@ -144,6 +136,21 @@ export const endSession = async (req, res, next) => {
   }
 };
 
+export const deleteSession = async (req, res, next) => {
+  try {
+    const session = await Session.findOne({ _id: req.params.id, userId: req.user._id });
+    if (!session) return res.status(404).json({ message: 'Session not found' });
+
+    await SessionSnapshot.deleteMany({ sessionId: session._id });
+    await Session.deleteOne({ _id: session._id });
+
+    console.log(`Deleted session ${session._id} for user ${req.user._id}`);
+    res.json({ message: 'Session deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getSessions = async (req, res, next) => {
   try {
     const {
@@ -151,6 +158,8 @@ export const getSessions = async (req, res, next) => {
       limit = 10,
       type,
       difficulty,
+      from,
+      to,
       startDate,
       endDate,
       sortBy = 'date',
@@ -160,11 +169,8 @@ export const getSessions = async (req, res, next) => {
     const query = { userId: req.user._id, status: 'completed' };
     if (type) query.type = type;
     if (difficulty) query.difficulty = difficulty;
-    if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
-    }
+    const { createdAt } = buildDateRangeQuery({ from, to, startDate, endDate });
+    if (createdAt) query.createdAt = createdAt;
 
     const sort = { [sortBy === 'score' ? 'finalScore' : 'createdAt']: order === 'asc' ? 1 : -1 };
     const skip = (Number(page) - 1) * Number(limit);

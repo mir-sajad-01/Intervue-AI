@@ -51,10 +51,22 @@ const Interview = () => {
       setFeedback(data.feedback);
       speech.setTranscript('');
       if (index + 1 >= questions.length) {
+        setActive(false);
+        speech.stop();
+        voice.stop();
+        webcam.stop();
         const duration = Math.round((Date.now() - startedAt) / 1000);
-        const ended = await api.post(`/sessions/${session._id}/end`, { duration });
-        toast.success('Session completed');
-        navigate(`/sessions/${ended.data.session._id}`);
+        const shouldSave = window.confirm('Interview complete. Do you want to save this session?');
+
+        if (shouldSave) {
+          const ended = await api.post(`/sessions/${session._id}/end`, { duration });
+          toast.success('Session saved');
+          navigate(`/sessions/${ended.data.session._id}`);
+        } else {
+          await api.delete(`/sessions/${session._id}`);
+          toast.success('Session discarded');
+          navigate('/dashboard');
+        }
       } else {
         setIndex((value) => value + 1);
       }

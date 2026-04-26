@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Bar, BarChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import Loader from '../components/Loader';
 import ScoreCard from '../components/ScoreCard';
@@ -55,6 +56,7 @@ const buildExpressionSummary = (session) => {
 
 const SessionResult = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -73,6 +75,18 @@ const SessionResult = () => {
   if (!session) return <main className="mx-auto max-w-7xl px-4 py-8">Session not found.</main>;
 
   const timeline = session.emotionTimeline.map((item, index) => ({ index: index + 1, emotion: item.emotion, value: emotionValue(item.emotion), confidence: item.confidence }));
+  const deleteSession = async () => {
+    const confirmed = window.confirm('Delete this saved session permanently?');
+    if (!confirmed) return;
+
+    try {
+      await api.delete(`/sessions/${session._id}`);
+      toast.success('Session deleted');
+      navigate('/history');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not delete session');
+    }
+  };
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8">
@@ -84,6 +98,7 @@ const SessionResult = () => {
         <div className="flex gap-2">
           <Link className="btn-primary" to="/interview">Practice Again</Link>
           <Link className="btn-secondary" to="/dashboard">Go to Dashboard</Link>
+          <button className="btn-secondary" onClick={deleteSession}>Delete Session</button>
           <button className="btn-secondary" onClick={() => navigator.share?.({ title: 'IntervueAI Result', text: `I scored ${session.finalScore}% (${session.grade}) on IntervueAI.` })}>Share Result</button>
         </div>
       </div>
