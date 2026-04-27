@@ -64,6 +64,26 @@ const questionTemplates = [
     ]
   },
   {
+    match: /where do you see yourself in 5 years/,
+    sampleAnswer:
+      'In five years, I want to be in a role where I have developed deeper expertise, taken on more responsibility, and built a record of dependable results. I would like to keep improving my technical and communication skills while contributing to projects that create measurable value. Over time, I also want to grow into someone who can guide others and help the team succeed at a higher level.',
+    tips: [
+      'Focus on growth, contribution, and realistic ambition.',
+      'Show that your plans connect to the role you are applying for.',
+      'Avoid answers that sound vague or only title-focused.'
+    ]
+  },
+  {
+    match: /why should we hire you/,
+    sampleAnswer:
+      'You should hire me because I bring a strong willingness to learn, dependable execution, and a mindset focused on contributing to the team. When I take on a responsibility, I work to understand the goal clearly, communicate well, and deliver results that others can rely on. I would bring that same energy here while continuing to grow quickly in the role.',
+    tips: [
+      'Connect your strengths directly to what the employer needs.',
+      'Use one short example or proof point to support your claim.',
+      'Sound confident without making broad claims you cannot back up.'
+    ]
+  },
+  {
     match: /biggest weakness/,
     sampleAnswer:
       'One weakness I identified in myself was spending too much time trying to perfect details before sharing progress. I have worked on that by setting clearer checkpoints, asking for feedback earlier, and focusing on what matters most for the outcome. That has helped me stay efficient without lowering quality.',
@@ -82,10 +102,33 @@ const getTemplateForQuestion = (question) => {
 
 const buildGenericSampleAnswer = (question, transcript) => {
   const cleanedQuestion = sanitizeTopic(question);
+  const normalizedQuestion = normalizeForMatch(question);
+  const transcriptText = sanitizeTopic(transcript);
+  const wordCount = transcriptText.split(/\s+/).filter(Boolean).length;
   const hasAnswer = normalizeForMatch(transcript) !== 'no answer provided';
 
   if (!hasAnswer) {
     return `A stronger answer to "${cleanedQuestion}" would start with a direct response, add one specific example, and end with a clear result or takeaway. Keeping it focused and concrete will make it sound more confident and useful.`;
+  }
+
+  if (/tell me about a time|describe a time|give an example/.test(normalizedQuestion)) {
+    return 'A stronger answer should use a clear STAR structure: explain the situation briefly, describe your responsibility, walk through the action you took, and finish with the result. That keeps the story focused and shows how you handle real situations.';
+  }
+
+  if (/why /.test(normalizedQuestion)) {
+    return 'A stronger answer should begin with a direct reason, support it with one concrete detail or example, and end by linking that reason back to the role. That makes the answer sound more thoughtful and convincing.';
+  }
+
+  if (/what |how /.test(normalizedQuestion)) {
+    return 'A stronger answer should open with a direct response, then explain it clearly and support it with one relevant example or detail. Ending with a short takeaway will make the answer feel more complete.';
+  }
+
+  if (wordCount <= 7) {
+    return `A stronger answer to "${cleanedQuestion}" should go beyond a short claim. Start with your main point, explain why it is true, and add one concrete example or result so the interviewer can trust the answer.`;
+  }
+
+  if (wordCount <= 16) {
+    return `A stronger answer to "${cleanedQuestion}" would feel more complete with a clearer structure. Try using a simple flow of main point, supporting example, and outcome so the answer sounds more persuasive and easier to follow.`;
   }
 
   return `A stronger answer to "${cleanedQuestion}" would open with the main point in one sentence, support it with a specific example, and finish by explaining the result. Keep the explanation concise, use natural transitions, and connect the answer back to what the interviewer wants to learn.`;

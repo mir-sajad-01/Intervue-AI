@@ -6,6 +6,7 @@ import { average, buildDateRangeQuery, gradeFor } from '../utils/reporting.js';
 
 const computeScores = (session) => {
   const positive = ['happy', 'neutral'];
+  const hasExpressionData = (session.emotionTimeline || []).length > 0;
   const expressionScore = average(
     session.emotionTimeline.map((snap) => (positive.includes(snap.emotion) ? snap.confidence * 100 : 0))
   );
@@ -13,9 +14,12 @@ const computeScores = (session) => {
   const contentScore = average(
     session.answers.map((answer) => ((answer.relevanceScore + answer.clarityScore) / 2) * 10)
   );
-  const finalScore = expressionScore * 0.3 + speechScore * 0.35 + contentScore * 0.35;
+  const finalScore = hasExpressionData
+    ? expressionScore * 0.3 + speechScore * 0.35 + contentScore * 0.35
+    : speechScore * 0.5 + contentScore * 0.5;
 
   return {
+    hasExpressionData,
     expressionScore: Math.round(expressionScore),
     speechScore: Math.round(speechScore),
     contentScore: Math.round(contentScore),
@@ -26,6 +30,7 @@ const computeScores = (session) => {
 
 const decorateSession = (session) => {
   const data = session.toObject ? session.toObject() : session;
+  const computedScores = computeScores(data);
   const scoredAnswers = [...(data.answers || [])].sort((a, b) => {
     const scoreA = a.relevanceScore + a.fluencyScore + a.clarityScore;
     const scoreB = b.relevanceScore + b.fluencyScore + b.clarityScore;
@@ -33,6 +38,10 @@ const decorateSession = (session) => {
   });
   return {
     ...data,
+    ...computedScores,
+    scoringExplanation: computedScores.hasExpressionData
+      ? 'Overall score uses 30% expression, 35% speech, and 35% content.'
+      : 'No expression snapshots were captured, so overall score is based on speech and content only.',
     strongestAnswer: scoredAnswers[0] || null,
     weakestAnswer: scoredAnswers[scoredAnswers.length - 1] || null
   };
@@ -179,7 +188,12 @@ export const getSessions = async (req, res, next) => {
       Session.countDocuments(query)
     ]);
 
-    res.json({ sessions, page: Number(page), totalPages: Math.ceil(total / Number(limit)), total });
+    res.json({
+      sessions: sessions.map((session) => decorateSession(session)),
+      page: Number(page),
+      totalPages: Math.ceil(total / Number(limit)),
+      total
+    });
   } catch (error) {
     next(error);
   }
@@ -198,11 +212,12 @@ export const getSessionById = async (req, res, next) => {
 export const getDashboardStats = async (req, res, next) => {
   try {
     const sessions = await Session.find({ userId: req.user._id, status: 'completed' }).sort({ createdAt: -1 });
-    const totalSessions = sessions.length;
-    const averageScore = Math.round(average(sessions.map((session) => session.finalScore)));
-    const bestScore = Math.round(Math.max(0, ...sessions.map((session) => session.finalScore)));
+    const decoratedSessions = sessions.map((session) => decorateSession(session));
+    const totalSessions = decoratedSessions.length;
+    const averageScore = Math.round(average(decoratedSessions.map((session) => session.finalScore)));
+    const bestScore = Math.round(Math.max(0, ...decoratedSessions.map((session) => session.finalScore)));
 
-    const practicedDays = new Set(sessions.map((session) => session.createdAt.toISOString().slice(0, 10)));
+    const practicedDays = new Set(decoratedSessions.map((session) => new Date(session.createdAt).toISOString().slice(0, 10)));
     let streak = 0;
     const cursor = new Date();
     while (practicedDays.has(cursor.toISOString().slice(0, 10))) {
@@ -210,7 +225,7 @@ export const getDashboardStats = async (req, res, next) => {
       cursor.setDate(cursor.getDate() - 1);
     }
 
-    const emotionDistribution = sessions
+    const emotionDistribution = decoratedSessions
       .flatMap((session) => session.emotionTimeline)
       .reduce((acc, item) => {
         acc[item.emotion] = (acc[item.emotion] || 0) + 1;
@@ -222,12 +237,12 @@ export const getDashboardStats = async (req, res, next) => {
       averageScore,
       bestScore,
       streak,
-      scoreTrend: sessions
+      scoreTrend: decoratedSessions
         .slice(0, 10)
         .reverse()
         .map((session) => ({ date: session.createdAt, score: session.finalScore, id: session._id })),
       emotionDistribution: Object.entries(emotionDistribution).map(([emotion, value]) => ({ emotion, value })),
-      recentSessions: sessions.slice(0, 5)
+      recentSessions: decoratedSessions.slice(0, 5)
     });
   } catch (error) {
     next(error);

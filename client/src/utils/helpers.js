@@ -22,3 +22,12 @@ export const emotionValue = (emotion) =>
   ({ angry: 1, disgust: 2, fear: 3, sad: 4, neutral: 5, surprise: 6, happy: 7 })[emotion] || 0;
 
 export const aggregateTips = (answers = []) => [...new Set(answers.flatMap((answer) => answer.tips || []))];
+
+export const describeTenPointScore = (value) => {
+  const score = Math.max(0, Math.min(10, Number(value) || 0));
+  if (score >= 9) return 'Excellent';
+  if (score >= 7) return 'Strong';
+  if (score >= 5) return 'Fair';
+  if (score >= 3) return 'Needs work';
+  return 'Weak';
+};
