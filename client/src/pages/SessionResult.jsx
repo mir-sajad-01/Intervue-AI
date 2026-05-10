@@ -12,7 +12,8 @@ import {
   describeTenPointScore,
   emotionValue,
   formatDate,
-  gradeTone
+  gradeTone,
+  normalizeEmotion
 } from '../utils/helpers';
 
 const answerMetrics = [
@@ -59,13 +60,13 @@ const buildExpressionSummary = (session) => {
 
   const positiveEmotions = ['happy', 'neutral'];
   const frequency = snapshots.reduce((acc, item) => {
-    const key = String(item.emotion || '').toLowerCase();
+    const key = normalizeEmotion(item.emotion);
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
 
   const dominantEmotion = Object.entries(frequency).sort((a, b) => b[1] - a[1])[0]?.[0] || 'neutral';
-  const positiveCount = snapshots.filter((item) => positiveEmotions.includes(String(item.emotion || '').toLowerCase())).length;
+  const positiveCount = snapshots.filter((item) => positiveEmotions.includes(normalizeEmotion(item.emotion))).length;
   const positiveRate = Math.round((positiveCount / snapshots.length) * 100);
 
   let headline = 'Expression needs more consistency';
@@ -134,7 +135,7 @@ const SessionResult = () => {
 
   const timeline = session.emotionTimeline.map((item, index) => ({
     index: index + 1,
-    emotion: item.emotion,
+    emotion: normalizeEmotion(item.emotion),
     value: emotionValue(item.emotion),
     confidence: item.confidence
   }));

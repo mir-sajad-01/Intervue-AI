@@ -1,4 +1,5 @@
 const POSITIVE_EMOTIONS = ['happy', 'neutral'];
+const EMOTION_LABELS = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise'];
 const FILLER_PATTERNS = [
   /\bumm+\b/gi,
   /\buh+\b/gi,
@@ -21,6 +22,16 @@ export const gradeFor = (score) => {
 
 export const countFillerWords = (transcript = '') =>
   FILLER_PATTERNS.reduce((total, pattern) => total + ((String(transcript).match(pattern) || []).length), 0);
+
+export const normalizeEmotionLabel = (emotion) => {
+  const normalized = String(emotion || '')
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return EMOTION_LABELS.find((label) => normalized.includes(label)) || normalized;
+};
 
 const createDateBoundary = (input, endOfDay = false) => {
   if (!input) return null;
@@ -103,7 +114,7 @@ export const buildReportSummary = (sessions = []) => {
       : 0;
 
   const emotionList = orderedSessions.flatMap((session) =>
-    (session.emotionTimeline || []).map((item) => String(item.emotion || '').toLowerCase())
+    (session.emotionTimeline || []).map((item) => normalizeEmotionLabel(item.emotion))
   );
 
   const fillerWordsPerSession = orderedSessions.map((session) =>

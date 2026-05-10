@@ -8,6 +8,23 @@ const normalizeImageInput = (imageBase64) => {
 };
 
 const unique = (items) => [...new Set(items.filter(Boolean))];
+const EMOTION_LABELS = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise'];
+
+const normalizeEmotionLabel = (label) => {
+  const normalized = String(label || '')
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return EMOTION_LABELS.find((emotion) => normalized.includes(emotion)) || normalized || 'neutral';
+};
+
+const normalizeConfidence = (value) => {
+  const confidence = Number(value);
+  if (!Number.isFinite(confidence)) return 0;
+  return Math.max(0, Math.min(1, confidence));
+};
 
 const getEmotionEndpoints = () => {
   const baseUrl = process.env.HF_SPACE_URL?.replace(/\/$/, '');
@@ -29,16 +46,48 @@ const getApiRoot = (endpoint) => {
   return endpoint.includes('/gradio_api/') ? `${baseUrl}/gradio_api` : baseUrl;
 };
 
+const parseEmotionMap = (prediction) => {
+  const allEmotions = Object.entries(prediction || {})
+    .filter(([, confidence]) => Number.isFinite(Number(confidence)))
+    .map(([label, confidence]) => ({
+      label: normalizeEmotionLabel(label),
+      confidence: normalizeConfidence(confidence)
+    }))
+    .sort((a, b) => b.confidence - a.confidence);
+
+  if (!allEmotions.length) return null;
+
+  return {
+    emotion: allEmotions[0].label,
+    confidence: allEmotions[0].confidence,
+    allEmotions
+  };
+};
+
 const parsePrediction = (result) => {
   const prediction = result?.data?.[0];
   if (!prediction?.label) {
+    const mappedPrediction = parseEmotionMap(prediction);
+    if (mappedPrediction) return mappedPrediction;
+
     throw new Error(`Invalid Hugging Face response: ${JSON.stringify(result).slice(0, 500)}`);
   }
+  const allEmotions = (prediction.confidences || [])
+    .map((item) => ({
+      label: normalizeEmotionLabel(item.label),
+      confidence: normalizeConfidence(item.confidence)
+    }))
+    .sort((a, b) => b.confidence - a.confidence);
+
+  const topEmotion = allEmotions[0] || {
+    label: normalizeEmotionLabel(prediction.label),
+    confidence: normalizeConfidence(prediction.confidence)
+  };
 
   return {
-    emotion: prediction.label,
-    confidence: Number(prediction.confidences?.[0]?.confidence ?? 0),
-    allEmotions: prediction.confidences ?? []
+    emotion: normalizeEmotionLabel(topEmotion.label || prediction.label),
+    confidence: normalizeConfidence(topEmotion.confidence),
+    allEmotions
   };
 };
 

@@ -31,9 +31,9 @@ const Interview = () => {
   const [submitting, setSubmitting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [warming, setWarming] = useState(false);
-  const [emotionErrorShown, setEmotionErrorShown] = useState(false);
   const emotionErrorShownRef = useRef(false);
   const emotionUnavailableRef = useRef(false);
+  const emotionFailureCountRef = useRef(0);
   const [startedAt, setStartedAt] = useState(null);
   const secondsPerQuestion = difficultySeconds[setup.difficulty];
   const current = questions[index];
@@ -98,13 +98,16 @@ const Interview = () => {
       try {
         if (first) setWarming(true);
         const { data } = await api.post('/emotion/analyze', { imageBase64: frame, sessionId: session._id });
+        emotionFailureCountRef.current = 0;
         setEmotion(data);
       } catch (error) {
+        emotionFailureCountRef.current += 1;
         if (!emotionErrorShownRef.current) {
           toast.error(error.response?.data?.detail || error.response?.data?.message || 'Emotion analysis is unavailable');
           emotionErrorShownRef.current = true;
+        }
+        if (emotionFailureCountRef.current >= 3) {
           emotionUnavailableRef.current = true;
-          setEmotionErrorShown(true);
         }
         console.warn(error.response?.data || error);
       } finally {

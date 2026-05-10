@@ -1,4 +1,4 @@
-import { emotionTone } from '../utils/helpers';
+import { emotionTone, normalizeEmotion } from '../utils/helpers';
 
 const fillerWords = ['umm', 'um', 'uh', 'like', 'you know', 'basically', 'actually'];
 
@@ -12,9 +12,9 @@ const countFillers = (text = '') => {
 
 const positiveConfidence = (emotion) => {
   const confidences = emotion?.allEmotions || [];
-  const positive = confidences.filter((item) => ['happy', 'neutral'].includes(item.label));
+  const positive = confidences.filter((item) => ['happy', 'neutral'].includes(normalizeEmotion(item.label)));
   if (positive.length) return Math.max(...positive.map((item) => Number(item.confidence) || 0));
-  return ['happy', 'neutral'].includes(emotion?.emotion) ? Number(emotion?.confidence) || 0 : 0;
+  return ['happy', 'neutral'].includes(normalizeEmotion(emotion?.emotion)) ? Number(emotion?.confidence) || 0 : 0;
 };
 
 const paceLabel = (transcript, elapsedSeconds) => {
@@ -24,12 +24,13 @@ const paceLabel = (transcript, elapsedSeconds) => {
   const wpm = Math.round(words / (elapsedSeconds / 60));
   if (wpm < 100) return { label: `Too Slow - ${wpm} wpm`, tone: 'text-amber-400' };
   if (wpm > 160) return { label: `Too Fast - ${wpm} wpm`, tone: 'text-rose-400' };
-  return { label: `Good Pace ✓ - ${wpm} wpm`, tone: 'text-emerald-400' };
+  return { label: `Good Pace - ${wpm} wpm`, tone: 'text-emerald-400' };
 };
 
 const LiveFeedbackSidebar = ({ emotion, transcript, elapsedSeconds, warming }) => {
   const confidence = positiveConfidence(emotion);
   const pace = paceLabel(transcript || '', elapsedSeconds);
+  const cleanEmotion = normalizeEmotion(emotion?.emotion);
 
   return (
     <aside className="panel p-3">
@@ -39,9 +40,9 @@ const LiveFeedbackSidebar = ({ emotion, transcript, elapsedSeconds, warming }) =
           <div className="mb-1 text-xs text-slate-500 dark:text-slate-400">Emotion</div>
           {warming ? (
             <span className="text-xs text-[#6C63FF] dark:text-[#4ECDC4]">Warming up</span>
-          ) : emotion?.emotion ? (
-            <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold capitalize ${emotionTone(emotion.emotion)}`}>
-              {emotion.emotion}
+          ) : cleanEmotion ? (
+            <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold capitalize ${emotionTone(cleanEmotion)}`}>
+              {cleanEmotion}
             </span>
           ) : (
             <span className="text-xs text-slate-500">Waiting</span>
@@ -61,7 +62,7 @@ const LiveFeedbackSidebar = ({ emotion, transcript, elapsedSeconds, warming }) =
           </div>
         </div>
 
-        <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">💬 Fillers: {countFillers(transcript)}</div>
+        <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">Fillers: {countFillers(transcript)}</div>
         <div className={`text-xs font-semibold ${pace.tone}`}>{pace.label}</div>
       </div>
     </aside>

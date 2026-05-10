@@ -41,7 +41,12 @@ const ScoreCard = ({
   const progress = numericValue === null ? 0 : Math.max(0, Math.min(100, (numericValue / safeMax) * 100));
   const selectedTone = tones[tone] || tones.purple;
   const autoCaption =
-    caption || (numericValue === null ? '' : safeMax === 10 ? describeTenPointScore(numericValue) : describePercentageScore(numericValue));
+    caption ||
+    (showProgress && numericValue !== null
+      ? safeMax === 10
+        ? describeTenPointScore(numericValue)
+        : describePercentageScore(numericValue)
+      : '');
 
   return (
     <div className="panel relative overflow-hidden p-4">

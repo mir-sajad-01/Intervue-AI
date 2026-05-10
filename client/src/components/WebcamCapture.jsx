@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 const WebcamCapture = ({ webcam }) => {
   useEffect(() => {
     webcam.start();
+    return () => webcam.stop();
   }, []);
 
   return (

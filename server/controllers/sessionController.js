@@ -2,13 +2,13 @@ import Question from '../models/Question.js';
 import Session from '../models/Session.js';
 import SessionSnapshot from '../models/SessionSnapshot.js';
 import { evaluateAnswer, generateInterviewQuestions } from '../utils/gemini.js';
-import { average, buildDateRangeQuery, gradeFor } from '../utils/reporting.js';
+import { average, buildDateRangeQuery, gradeFor, normalizeEmotionLabel } from '../utils/reporting.js';
 
 const computeScores = (session) => {
   const positive = ['happy', 'neutral'];
   const hasExpressionData = (session.emotionTimeline || []).length > 0;
   const expressionScore = average(
-    session.emotionTimeline.map((snap) => (positive.includes(snap.emotion) ? snap.confidence * 100 : 0))
+    session.emotionTimeline.map((snap) => (positive.includes(normalizeEmotionLabel(snap.emotion)) ? snap.confidence * 100 : 0))
   );
   const speechScore = average(session.answers.map((answer) => answer.fluencyScore * 10));
   const contentScore = average(
@@ -228,7 +228,8 @@ export const getDashboardStats = async (req, res, next) => {
     const emotionDistribution = decoratedSessions
       .flatMap((session) => session.emotionTimeline)
       .reduce((acc, item) => {
-        acc[item.emotion] = (acc[item.emotion] || 0) + 1;
+        const emotion = normalizeEmotionLabel(item.emotion);
+        acc[emotion] = (acc[emotion] || 0) + 1;
         return acc;
       }, {});
 

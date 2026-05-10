@@ -3,13 +3,21 @@ import { useEffect, useRef, useState } from 'react';
 export const useWebcam = () => {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const requestIdRef = useRef(0);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
 
   const start = async () => {
     try {
       setError('');
+      const requestId = requestIdRef.current + 1;
+      requestIdRef.current = requestId;
+      streamRef.current?.getTracks().forEach((track) => track.stop());
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      if (requestId !== requestIdRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
       setReady(true);
@@ -25,7 +33,10 @@ export const useWebcam = () => {
   };
 
   const stop = () => {
+    requestIdRef.current += 1;
     streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
     setReady(false);
   };
 

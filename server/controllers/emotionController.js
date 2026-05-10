@@ -12,6 +12,11 @@ export const analyzeEmotionFrame = async (req, res, next) => {
     const result = await analyzeEmotion(imageBase64);
 
     if (sessionId) {
+      const session = await Session.findOne({ _id: sessionId, userId: req.user._id });
+      if (!session) {
+        return res.status(404).json({ message: 'Session not found' });
+      }
+
       const snapshot = await SessionSnapshot.create({
         sessionId,
         emotion: result.emotion,
@@ -19,18 +24,12 @@ export const analyzeEmotionFrame = async (req, res, next) => {
         allEmotions: result.allEmotions
       });
 
-      await Session.findOneAndUpdate(
-        { _id: sessionId, userId: req.user._id },
-        {
-          $push: {
-            emotionTimeline: {
-              emotion: result.emotion,
-              confidence: result.confidence,
-              timestamp: snapshot.timestamp
-            }
-          }
-        }
-      );
+      session.emotionTimeline.push({
+        emotion: result.emotion,
+        confidence: result.confidence,
+        timestamp: snapshot.timestamp
+      });
+      await session.save();
     }
 
     res.json(result);
