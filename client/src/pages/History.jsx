@@ -135,11 +135,12 @@ const History = () => {
                 <div>
                   <Link to={`/sessions/${session._id}`} className="font-bold text-slate-950 dark:text-white">{session.type} Interview</Link>
                   <p className="text-sm text-slate-500">{formatDate(session.createdAt)}</p>
-                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{session.difficulty} · {session.totalQuestions} questions</p>
+                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{session.difficulty} - {session.totalQuestions} questions</p>
                 </div>
                 <div className="text-right">
+                  <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Final score</div>
                   <div className="text-2xl font-black text-cyan-600">{session.finalScore}%</div>
-                  <div className={`font-black ${gradeTone(session.grade)}`}>{session.grade}</div>
+                  <div className={`font-black ${gradeTone(session.grade)}`}>Grade {session.grade}</div>
                   <button className="btn-secondary mt-3" onClick={() => deleteSession(session._id)}>Delete</button>
                 </div>
               </div>

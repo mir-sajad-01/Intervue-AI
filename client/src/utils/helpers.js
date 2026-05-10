@@ -31,3 +31,12 @@ export const describeTenPointScore = (value) => {
   if (score >= 3) return 'Needs work';
   return 'Weak';
 };
+
+export const describePercentageScore = (value) => {
+  const score = Math.max(0, Math.min(100, Number(value) || 0));
+  if (score >= 90) return 'Excellent';
+  if (score >= 75) return 'Strong';
+  if (score >= 60) return 'Good';
+  if (score >= 45) return 'Needs work';
+  return 'Needs focus';
+};

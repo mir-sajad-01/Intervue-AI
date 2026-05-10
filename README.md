@@ -10,7 +10,7 @@
 
 <br/>
 
-[![Made by Sajad](https://img.shields.io/badge/Built%20by-Mir%20Sajad%20Bashir-4ECDC4?style=flat-square)](https://github.com/sajad-bashir-mir)
+[![Made by Sajad](https://img.shields.io/badge/Built%20by-Mir%20Sajad%20Bashir-4ECDC4?style=flat-square)](https://github.com/mir-sajad-01)
 [![Tech](https://img.shields.io/badge/Stack-MERN%20%2B%20AI-6C63FF?style=flat-square)]()
 [![Model](https://img.shields.io/badge/Model-MobileNetV2%20on%20FER2013-orange?style=flat-square)](https://huggingface.co/spaces/mir-sajad-01/facial-expression-recognition)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)]()
@@ -207,7 +207,7 @@ This model was **trained from scratch** by Mir Sajad Bashir as part of this proj
 | Input size | 48×48 grayscale |
 | Test accuracy | 59.03% |
 | Deployment | Hugging Face Spaces (Gradio) |
-| Inference | REST API via `/run/predict_emotion` |
+| Inference | REST API via `/gradio_api/run/predict_emotion` |
 
 > FER2013 is a notoriously difficult dataset. Human-level accuracy on it is approximately 65%. The model performs within the expected range for this architecture.
 
@@ -358,8 +358,8 @@ interview-platform/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/sajad-bashir-mir/intervue-ai.git
-cd intervue-ai
+git clone https://github.com/mir-sajad-01/Intervue-AI.git
+cd Intervue-AI
 ```
 
 ### 2. Install all dependencies
@@ -411,7 +411,7 @@ JWT_SECRET=your_64_character_random_secret
 JWT_REFRESH_SECRET=your_64_character_random_refresh_secret
 GEMINI_API_KEY=your_gemini_api_key
 HF_SPACE_URL=https://mir-sajad-01-facial-expression-recognition.hf.space
-HF_API_URL=https://mir-sajad-01-facial-expression-recognition.hf.space/run/predict_emotion
+HF_API_URL=https://mir-sajad-01-facial-expression-recognition.hf.space/gradio_api/run/predict_emotion
 CLIENT_URL=http://localhost:5173
 ```
 
@@ -466,7 +466,7 @@ VITE_API_URL=http://localhost:5000
 **How it works internally:**
 ```
 Client sends base64 webcam frame
-  → Backend calls HF Space /run/predict_emotion
+  → Backend calls HF Space /gradio_api/run/predict_emotion
   → Returns { emotion, confidence, allEmotions[] }
   → Saved as SessionSnapshot in MongoDB
 ```
@@ -581,7 +581,7 @@ Islamic University of Science and Technology (IUST), Srinagar, Kashmir
 |---|---|
 | 📧 Email | mirsajad00011@gmail.com |
 | 💼 LinkedIn | [linkedin.com/in/sajad-bashir-mir](https://linkedin.com/in/sajad-bashir-mir) |
-| 🐙 GitHub | [github.com/sajad-bashir-mir](https://github.com/sajad-bashir-mir) |
+| 🐙 GitHub | [github.com/mir-sajad-01](https://github.com/mir-sajad-01) |
 | 📍 Location | Srinagar, Kashmir, India |
 
 </div>

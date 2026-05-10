@@ -80,10 +80,36 @@ const Dashboard = () => {
       {!stats ? <div className="panel p-8 text-center text-slate-500">Dashboard data is unavailable.</div> : (
       <>
       <div className="grid gap-4 md:grid-cols-4">
-        <ScoreCard label="Sessions" value={stats.totalSessions} />
-        <ScoreCard label="Average Score" value={`${stats.averageScore}%`} />
-        <ScoreCard label="Best Score" value={`${stats.bestScore}%`} />
-        <ScoreCard label="Streak" value={`${stats.streak}d`} />
+        <ScoreCard
+          label="Completed sessions"
+          value={stats.totalSessions}
+          description="Total saved interview practices."
+          showProgress={false}
+        />
+        <ScoreCard
+          label="Average final score"
+          value={stats.averageScore}
+          suffix="%"
+          description="Your usual performance across sessions."
+          scaleLabel="0-100%"
+          tone="teal"
+        />
+        <ScoreCard
+          label="Best final score"
+          value={stats.bestScore}
+          suffix="%"
+          description="Your strongest session so far."
+          scaleLabel="0-100%"
+          tone="purple"
+        />
+        <ScoreCard
+          label="Practice streak"
+          value={stats.streak}
+          suffix="days"
+          description="Consecutive days practiced."
+          showProgress={false}
+          tone="amber"
+        />
       </div>
       <section className="mt-6 panel p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -151,8 +177,8 @@ const Dashboard = () => {
           <div className="divide-y divide-slate-200 dark:divide-slate-800">
             {stats.recentSessions.map((session) => (
               <Link key={session._id} to={`/sessions/${session._id}`} className="flex flex-wrap items-center justify-between gap-2 py-3">
-                <span>{session.type} · {session.difficulty} · {formatDate(session.createdAt)}</span>
-                <span className="font-bold text-cyan-600">{session.finalScore}% · {session.grade}</span>
+                <span>{session.type} - {session.difficulty} - {formatDate(session.createdAt)}</span>
+                <span className="font-bold text-cyan-600">{session.finalScore}% - Grade {session.grade}</span>
               </Link>
             ))}
           </div>

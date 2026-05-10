@@ -6,7 +6,43 @@ import Loader from '../components/Loader';
 import ScoreCard from '../components/ScoreCard';
 import api from '../utils/api';
 import { getReadableSampleAnswer } from '../utils/feedback';
-import { aggregateTips, describeTenPointScore, emotionValue, formatDate, gradeTone } from '../utils/helpers';
+import {
+  aggregateTips,
+  describePercentageScore,
+  describeTenPointScore,
+  emotionValue,
+  formatDate,
+  gradeTone
+} from '../utils/helpers';
+
+const answerMetrics = [
+  {
+    key: 'relevanceScore',
+    label: 'Relevance score',
+    shortLabel: 'Relevance',
+    description: 'How directly this answer matches the question.'
+  },
+  {
+    key: 'fluencyScore',
+    label: 'Fluency score',
+    shortLabel: 'Fluency',
+    description: 'How naturally and smoothly the answer was spoken.'
+  },
+  {
+    key: 'clarityScore',
+    label: 'Clarity score',
+    shortLabel: 'Clarity',
+    description: 'How easy the answer is to understand and follow.'
+  }
+];
+
+const scoreGuide = [
+  { title: '0-2', text: 'Weak answer. Needs a clearer point and structure.' },
+  { title: '3-4', text: 'Needs work. Some idea is present, but not enough detail.' },
+  { title: '5-6', text: 'Fair. Understandable, but could be stronger.' },
+  { title: '7-8', text: 'Strong. Clear, relevant, and interview-ready.' },
+  { title: '9-10', text: 'Excellent. Confident, specific, and well structured.' }
+];
 
 const buildExpressionSummary = (session) => {
   const snapshots = session?.emotionTimeline || [];
@@ -76,9 +112,9 @@ const SessionResult = () => {
     () =>
       session
         ? [
-            { name: 'Expression', score: session.expressionScore },
-            { name: 'Speech', score: session.speechScore },
-            { name: 'Content', score: session.contentScore }
+            { name: 'Expression', score: session.expressionScore, meaning: 'Camera presence' },
+            { name: 'Speech', score: session.speechScore, meaning: 'Speaking flow' },
+            { name: 'Content', score: session.contentScore, meaning: 'Answer quality' }
           ]
         : [],
     [session]
@@ -150,34 +186,87 @@ const SessionResult = () => {
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <ScoreCard label="Overall" value={`${session.finalScore}%`} grade={session.grade} />
-        <ScoreCard label="Expression" value={`${session.expressionScore}%`} />
-        <ScoreCard label="Speech" value={`${session.speechScore}%`} />
-        <ScoreCard label="Content" value={`${session.contentScore}%`} />
+        <ScoreCard
+          label="Overall result"
+          value={session.finalScore}
+          suffix="%"
+          grade={session.grade}
+          caption={describePercentageScore(session.finalScore)}
+          description="Your complete interview readiness score."
+          scaleLabel="0-100%"
+        />
+        <ScoreCard
+          label="Expression score"
+          value={session.expressionScore}
+          suffix="%"
+          caption={describePercentageScore(session.expressionScore)}
+          description="Camera presence from happy and neutral expression snapshots."
+          scaleLabel="0-100%"
+          tone="teal"
+        />
+        <ScoreCard
+          label="Speech score"
+          value={session.speechScore}
+          suffix="%"
+          caption={describePercentageScore(session.speechScore)}
+          description="Speaking flow based on fluency feedback."
+          scaleLabel="0-100%"
+          tone="amber"
+        />
+        <ScoreCard
+          label="Content score"
+          value={session.contentScore}
+          suffix="%"
+          caption={describePercentageScore(session.contentScore)}
+          description="Answer quality based on relevance and clarity."
+          scaleLabel="0-100%"
+          tone="purple"
+        />
       </div>
-      <section className="mt-4 panel p-4">
-        <p className="text-sm font-semibold text-slate-900 dark:text-white">{session.scoringExplanation}</p>
-        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-          Grade scale: A = 90-100, B = 75-89, C = 60-74, D = 45-59, F = below 45.
-        </p>
+
+      <section className="mt-4 panel p-5">
+        <div className="grid gap-4 lg:grid-cols-[1.2fr_1.8fr]">
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide text-[#6C63FF] dark:text-[#4ECDC4]">Score guide</p>
+            <h2 className="mt-1 text-xl font-black text-slate-950 dark:text-white">How to read this result</h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+              IntervueAI separates your performance into camera presence, speaking flow, and answer quality. The final score combines those areas into one easy percentage.
+            </p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{session.scoringExplanation}</p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-5">
+            {scoreGuide.map((item) => (
+              <div key={item.title} className="rounded-md border border-[#6C63FF]/20 bg-white/50 p-3 dark:border-white/10 dark:bg-white/5">
+                <div className="text-sm font-black text-slate-950 dark:text-white">{item.title}</div>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">{item.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
       </section>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <div className="panel p-4">
-          <h2 className="mb-4 font-bold text-slate-950 dark:text-white">Breakdown</h2>
+          <div className="mb-4">
+            <h2 className="font-bold text-slate-950 dark:text-white">Performance by area</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Each bar is scored from 0-100%.</p>
+          </div>
           <div className="h-72">
             <ResponsiveContainer>
               <BarChart data={breakdown}>
                 <XAxis dataKey="name" />
                 <YAxis domain={[0, 100]} />
-                <Tooltip />
+                <Tooltip formatter={(value, name, item) => [`${value}%`, item.payload.meaning]} />
                 <Bar dataKey="score" fill="#06b6d4" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
         <div className="panel p-4">
-          <h2 className="mb-4 font-bold text-slate-950 dark:text-white">Emotion Timeline</h2>
+          <div className="mb-4">
+            <h2 className="font-bold text-slate-950 dark:text-white">Emotion timeline</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Shows which emotion was detected across the session.</p>
+          </div>
           <div className="h-72">
             <ResponsiveContainer>
               <LineChart data={timeline}>
@@ -237,40 +326,72 @@ const SessionResult = () => {
         </ul>
       </section>
 
-      <section className="mt-6 space-y-4">
+      <section className="mt-6 panel p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide text-[#6C63FF] dark:text-[#4ECDC4]">Answer review</p>
+            <h2 className="mt-1 text-xl font-black text-slate-950 dark:text-white">Question-by-question feedback</h2>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+              These scores are per answer. A higher number means the answer was more interview-ready.
+            </p>
+          </div>
+          <div className="rounded-md border border-[#6C63FF]/20 bg-white/50 px-4 py-3 text-xs text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+            <span className="font-black text-slate-950 dark:text-white">Answer scale:</span> 0 weak, 5 fair, 10 excellent.
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-4 space-y-4">
         {session.answers.map((answer, answerIndex) => (
-          <article key={answer._id} className="panel p-4">
-            <h3 className="font-bold text-slate-950 dark:text-white">
-              {answerIndex + 1}. {answer.questionId?.text}
-            </h3>
-            <p className="mt-3 text-sm text-slate-500">{answer.transcript}</p>
-            <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-              This answer uses a 0-10 scale: 0-2 weak, 3-4 needs work, 5-6 fair, 7-8 strong, 9-10 excellent.
-            </p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-3">
-              <ScoreCard
-                label="Relevance"
-                value={answer.relevanceScore}
-                suffix="/10"
-                caption={describeTenPointScore(answer.relevanceScore)}
-              />
-              <ScoreCard
-                label="Fluency"
-                value={answer.fluencyScore}
-                suffix="/10"
-                caption={describeTenPointScore(answer.fluencyScore)}
-              />
-              <ScoreCard
-                label="Clarity"
-                value={answer.clarityScore}
-                suffix="/10"
-                caption={describeTenPointScore(answer.clarityScore)}
-              />
+          <article key={answer._id} className="panel overflow-hidden p-4">
+            <div className="rounded-md border border-[#6C63FF]/20 bg-gradient-to-r from-[#6C63FF]/10 to-[#4ECDC4]/10 p-4 dark:border-white/10">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Question {answerIndex + 1}</p>
+              <h3 className="mt-1 text-lg font-black text-slate-950 dark:text-white">{answer.questionId?.text}</h3>
             </div>
-            <p className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">Suggested better answer</p>
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              {getReadableSampleAnswer(answer.questionId?.text, answer.sampleAnswer)}
-            </p>
+
+            <div className="mt-4 rounded-md border border-slate-200/80 bg-white/50 p-4 dark:border-white/10 dark:bg-white/5">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Your answer transcript</p>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                {answer.transcript || 'No answer was submitted for this question.'}
+              </p>
+            </div>
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              {answerMetrics.map((metric, index) => (
+                <ScoreCard
+                  key={metric.key}
+                  label={metric.label}
+                  value={answer[metric.key]}
+                  suffix="/10"
+                  max={10}
+                  caption={describeTenPointScore(answer[metric.key])}
+                  description={metric.description}
+                  scaleLabel="0-10"
+                  tone={index === 0 ? 'purple' : index === 1 ? 'amber' : 'teal'}
+                />
+              ))}
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+              <div className="rounded-md border border-[#4ECDC4]/20 bg-[#4ECDC4]/10 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Suggested stronger answer</p>
+                <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                  {getReadableSampleAnswer(answer.questionId?.text, answer.sampleAnswer)}
+                </p>
+              </div>
+              <div className="rounded-md border border-[#6C63FF]/20 bg-white/50 p-4 dark:border-white/10 dark:bg-white/5">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Coach tips for this answer</p>
+                {answer.tips?.length ? (
+                  <ul className="mt-2 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                    {answer.tips.map((tip) => (
+                      <li key={tip}>- {tip}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">No specific tips were generated for this answer.</p>
+                )}
+              </div>
+            </div>
           </article>
         ))}
       </section>
