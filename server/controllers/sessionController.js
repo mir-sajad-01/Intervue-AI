@@ -30,6 +30,26 @@ const computeScores = (session) => {
 
 const decorateSession = (session) => {
   const data = session.toObject ? session.toObject() : session;
+  const questionSnapshots = data.questions || [];
+  const answers = (data.answers || []).map((answer) => {
+    if (answer.questionId?.text) return answer;
+
+    const answerQuestionId = String(answer.questionId?._id || answer.questionId || '');
+    const snapshot = questionSnapshots.find((item) => String(item.questionId) === answerQuestionId);
+    if (!snapshot) return answer;
+
+    return {
+      ...answer,
+      questionId: {
+        _id: snapshot.questionId,
+        text: snapshot.text,
+        category: snapshot.category,
+        difficulty: snapshot.difficulty,
+        tags: snapshot.tags || []
+      }
+    };
+  });
+  data.answers = answers;
   const computedScores = computeScores(data);
   const scoredAnswers = [...(data.answers || [])].sort((a, b) => {
     const scoreA = a.relevanceScore + a.fluencyScore + a.clarityScore;
@@ -47,6 +67,15 @@ const decorateSession = (session) => {
   };
 };
 
+const toObjectId = (id) => (id?._id ? id._id : id);
+const toQuestionSnapshot = (question) => ({
+  questionId: toObjectId(question._id),
+  text: question.text,
+  category: question.category || 'Custom',
+  difficulty: question.difficulty,
+  tags: question.tags || []
+});
+
 export const startSession = async (req, res, next) => {
   try {
     const { type, difficulty, totalQuestions, topic } = req.body;
@@ -55,10 +84,13 @@ export const startSession = async (req, res, next) => {
 
     if (type === 'Custom') {
       const generated = await generateInterviewQuestions({ topic, difficulty, totalQuestions: requestedCount });
-      questions = await Question.insertMany(generated, { ordered: false }).catch(async () => {
-        const texts = generated.map((item) => item.text);
-        return Question.find({ text: { $in: texts } });
-      });
+      questions = generated.map((item) => ({
+        _id: new Question()._id,
+        text: item.text,
+        category: 'Custom',
+        difficulty,
+        tags: ['custom', topic.trim().toLowerCase()]
+      }));
     } else {
       const query = type === 'Mixed' ? { category: { $in: ['HR', 'Technical', 'Behavioural', 'Mixed'] } } : { category: type };
       query.difficulty = difficulty;
@@ -78,10 +110,13 @@ export const startSession = async (req, res, next) => {
           difficulty,
           totalQuestions: missing
         });
-        const generatedQuestions = await Question.insertMany(generated, { ordered: false }).catch(async () => {
-          const texts = generated.map((item) => item.text);
-          return Question.find({ text: { $in: texts } });
-        });
+        const generatedQuestions = generated.map((item) => ({
+          _id: new Question()._id,
+          text: item.text,
+          category: 'Custom',
+          difficulty,
+          tags: ['generated-fallback', type.toLowerCase()]
+        }));
         questions = [...questions, ...generatedQuestions].slice(0, requestedCount);
       }
     }
@@ -95,7 +130,9 @@ export const startSession = async (req, res, next) => {
       type,
       topic: type === 'Custom' ? topic : '',
       difficulty,
-      totalQuestions: requestedCount
+      totalQuestions: requestedCount,
+      questionIds: questions.map((question) => toObjectId(question._id)),
+      questions: questions.map(toQuestionSnapshot)
     });
 
     console.log(`Started session ${session._id} for user ${req.user._id}`);
@@ -113,8 +150,23 @@ export const submitAnswer = async (req, res, next) => {
     if (!session) return res.status(404).json({ message: 'Session not found' });
     if (session.status === 'completed') return res.status(400).json({ message: 'Session already completed' });
 
-    const question = await Question.findById(questionId);
-    if (!question) return res.status(404).json({ message: 'Question not found' });
+    const allowedQuestionIds = (session.questionIds || []).map((id) => String(id));
+    const questionIndex = allowedQuestionIds.indexOf(String(questionId));
+    if (allowedQuestionIds.length && questionIndex === -1) {
+      return res.status(400).json({ message: 'Question does not belong to this session' });
+    }
+    if (session.answers.some((answer) => String(answer.questionId) === String(questionId))) {
+      return res.status(400).json({ message: 'This question has already been answered' });
+    }
+
+    const snapshot = (session.questions || []).find((item) => String(item.questionId) === String(questionId));
+    const question =
+      (await Question.findById(questionId)) || snapshot || {
+        _id: questionId,
+        text: `Question ${questionIndex >= 0 ? questionIndex + 1 : session.answers.length + 1}`,
+        category: session.type,
+        difficulty: session.difficulty
+      };
 
     const feedback = await evaluateAnswer({ question: question.text, transcript });
     session.answers.push({ questionId, transcript, ...feedback });

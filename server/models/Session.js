@@ -22,12 +22,25 @@ const emotionTimelineSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const questionSnapshotSchema = new mongoose.Schema(
+  {
+    questionId: { type: mongoose.Schema.Types.ObjectId, required: true },
+    text: { type: String, required: true },
+    category: { type: String, enum: ['HR', 'Technical', 'Behavioural', 'Mixed', 'Custom'], required: true },
+    difficulty: { type: String, enum: ['Easy', 'Medium', 'Hard'], required: true },
+    tags: [{ type: String, trim: true }]
+  },
+  { _id: false }
+);
+
 const sessionSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   type: { type: String, enum: ['HR', 'Technical', 'Behavioural', 'Mixed', 'Custom'], required: true },
   topic: { type: String, default: '' },
   difficulty: { type: String, enum: ['Easy', 'Medium', 'Hard'], required: true },
   totalQuestions: { type: Number, min: 1, max: 30, required: true },
+  questionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Question' }],
+  questions: [questionSnapshotSchema],
   expressionScore: { type: Number, default: 0 },
   speechScore: { type: Number, default: 0 },
   contentScore: { type: Number, default: 0 },

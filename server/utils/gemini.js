@@ -12,6 +12,26 @@ const normalizeForMatch = (value) =>
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, '');
 
+const cleanJsonText = (value) => {
+  const withoutFence = String(value || '')
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  const firstBrace = withoutFence.indexOf('{');
+  const lastBrace = withoutFence.lastIndexOf('}');
+  return firstBrace >= 0 && lastBrace > firstBrace ? withoutFence.slice(firstBrace, lastBrace + 1) : withoutFence;
+};
+
+const parseGeminiJson = (value) => {
+  const cleaned = cleanJsonText(value);
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    return JSON.parse(cleaned.replace(/'/g, '"'));
+  }
+};
+
 const questionTemplates = [
   {
     match: /tell me about yourself/,
@@ -231,8 +251,7 @@ Return exactly this JSON:
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     const result = await model.generateContent(prompt);
-    const text = result.response.text().trim().replace(/^```json|```$/g, '').trim();
-    const parsed = JSON.parse(text.replace(/'/g, '"'));
+    const parsed = parseGeminiJson(result.response.text());
 
     return {
       relevanceScore: clampScore(parsed.relevanceScore),
@@ -295,8 +314,7 @@ Questions should be specific, realistic, and suitable for a job interview.`;
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     const result = await model.generateContent(prompt);
-    const text = result.response.text().trim().replace(/^```json|```$/g, '').trim();
-    const parsed = JSON.parse(text);
+    const parsed = parseGeminiJson(result.response.text());
     const questions = Array.isArray(parsed.questions) ? parsed.questions : [];
     const usable = questions
       .map((question) => String(question || '').trim())

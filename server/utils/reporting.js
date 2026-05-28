@@ -69,13 +69,22 @@ export const buildDateRangeQuery = ({ from, to, startDate, endDate } = {}) => {
 const normalizeAnswerScore = (answer = {}) =>
   Math.round((((answer.relevanceScore || 0) + (answer.fluencyScore || 0) + (answer.clarityScore || 0)) / 3) * 10);
 
-const readQuestionText = (answer = {}) => {
+const findQuestionSnapshot = (session = {}, answer = {}) => {
+  const answerQuestionId = String(answer.questionId?._id || answer.questionId || '');
+  return (session.questions || []).find((item) => String(item.questionId) === answerQuestionId);
+};
+
+const readQuestionText = (answer = {}, session = {}) => {
   if (typeof answer.questionId === 'object' && answer.questionId?.text) return answer.questionId.text;
+  const snapshot = findQuestionSnapshot(session, answer);
+  if (snapshot?.text) return snapshot.text;
   return answer.questionText || 'Question unavailable';
 };
 
-const readQuestionCategory = (answer = {}) => {
+const readQuestionCategory = (answer = {}, session = {}) => {
   if (typeof answer.questionId === 'object' && answer.questionId?.category) return answer.questionId.category;
+  const snapshot = findQuestionSnapshot(session, answer);
+  if (snapshot?.category) return snapshot.category;
   return 'Mixed';
 };
 
@@ -150,8 +159,8 @@ export const buildReportSummary = (sessions = []) => {
   const questionPerformanceMap = new Map();
   orderedSessions.forEach((session) => {
     (session.answers || []).forEach((answer) => {
-      const questionText = readQuestionText(answer);
-      const category = readQuestionCategory(answer);
+      const questionText = readQuestionText(answer, session);
+      const category = readQuestionCategory(answer, session);
       const score = normalizeAnswerScore(answer);
       const existing = questionPerformanceMap.get(questionText) || {
         question: questionText,

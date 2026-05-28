@@ -12,37 +12,67 @@ const Profile = () => {
   const [form, setForm] = useState({ name: user?.name || '', email: user?.email || '' });
   const [passwords, setPasswords] = useState({ oldPassword: '', newPassword: '' });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    refreshProfile().then((data) => {
-      setProfile(data);
-      setForm({ name: data.user.name, email: data.user.email });
-    }).finally(() => setLoading(false));
+    refreshProfile()
+      .then((data) => {
+        setProfile(data);
+        setForm({ name: data.user.name, email: data.user.email });
+      })
+      .catch((err) => {
+        setError(err.response?.data?.message || 'Could not load profile');
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const save = async (event) => {
     event.preventDefault();
-    const { data } = await api.put('/auth/profile', form);
-    localStorage.setItem('user', JSON.stringify(data.user));
-    toast.success('Profile updated');
-    await refreshProfile();
+    try {
+      const { data } = await api.put('/auth/profile', form);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      toast.success('Profile updated');
+      const refreshed = await refreshProfile();
+      setProfile(refreshed);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not update profile');
+    }
   };
 
   const changePassword = async (event) => {
     event.preventDefault();
-    await api.put('/auth/password', passwords);
-    setPasswords({ oldPassword: '', newPassword: '' });
-    toast.success('Password changed');
+    try {
+      await api.put('/auth/password', passwords);
+      setPasswords({ oldPassword: '', newPassword: '' });
+      toast.success('Password changed');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not change password');
+    }
   };
 
   const deleteAccount = async () => {
     if (!window.confirm('Delete your account and all sessions? This cannot be undone.')) return;
-    await api.delete('/auth/account');
-    await logout();
-    navigate('/');
+    try {
+      await api.delete('/auth/account');
+      await logout();
+      navigate('/');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not delete account');
+    }
   };
 
   if (loading) return <main className="mx-auto max-w-4xl px-4 py-8"><Loader label="Loading profile..." /></main>;
+  if (error || !profile) {
+    return (
+      <main className="mx-auto max-w-4xl px-4 py-8">
+        <div className="panel p-6 text-center">
+          <h1 className="text-2xl font-black text-slate-950 dark:text-white">Profile unavailable</h1>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-300">{error || 'Could not load profile details.'}</p>
+          <button className="btn-primary mt-4" onClick={() => window.location.reload()}>Try Again</button>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto grid max-w-4xl gap-6 px-4 py-8">
