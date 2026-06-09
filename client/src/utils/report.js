@@ -1,5 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { getReadableSampleAnswer } from './feedback';
+import { aggregateTips, normalizeEmotion } from './helpers';
 
 const COLORS = {
   ink: [15, 23, 42],
@@ -93,6 +95,12 @@ const sanitizeFilePart = (value = '') =>
 export const buildReportFileName = (userName, rangeMeta) =>
   `IntervueAI_Report_${sanitizeFilePart(userName)}_${sanitizeFilePart(rangeMeta.fileLabel)}.pdf`;
 
+export const buildHistoryExportFileName = (userName, rangeMeta) =>
+  `IntervueAI_History_${sanitizeFilePart(userName)}_${sanitizeFilePart(rangeMeta.fileLabel)}.pdf`;
+
+export const buildSessionReportFileName = (userName, session) =>
+  `IntervueAI_Session_${sanitizeFilePart(userName)}_${sanitizeFilePart(formatShortDate(session.createdAt))}_${String(session._id || '').slice(-6) || 'Result'}.pdf`;
+
 const formatDuration = (seconds = 0) => {
   const totalMinutes = Math.round((seconds || 0) / 60);
   const hours = Math.floor(totalMinutes / 60);
@@ -105,6 +113,53 @@ const gradeColor = (grade) => {
   if (grade === 'A') return COLORS.emerald;
   if (grade === 'B' || grade === 'C') return COLORS.amber;
   return COLORS.rose;
+};
+
+const clampNumber = (value, max = 100) => Math.max(0, Math.min(max, Math.round(Number(value) || 0)));
+
+const answerAverage = (answer) =>
+  clampNumber(((Number(answer.relevanceScore) || 0) + (Number(answer.fluencyScore) || 0) + (Number(answer.clarityScore) || 0)) / 3, 10);
+
+const getQuestionText = (answer, index) =>
+  answer.questionId?.text || answer.questionText || answer.question || `Question ${index + 1}`;
+
+const buildSessionEmotionSummary = (session) => {
+  const snapshots = session.emotionTimeline || [];
+  if (!snapshots.length) {
+    return {
+      dominantEmotion: 'N/A',
+      positiveRate: 0,
+      totalSnapshots: 0,
+      topEmotionRows: []
+    };
+  }
+
+  const counts = snapshots.reduce((acc, item) => {
+    const emotion = normalizeEmotion(item.emotion) || 'unknown';
+    const current = acc[emotion] || { count: 0, confidenceTotal: 0 };
+    acc[emotion] = {
+      count: current.count + 1,
+      confidenceTotal: current.confidenceTotal + (Number(item.confidence) || 0)
+    };
+    return acc;
+  }, {});
+
+  const positiveCount = snapshots.filter((item) => ['happy', 'neutral'].includes(normalizeEmotion(item.emotion))).length;
+  const topEmotionRows = Object.entries(counts)
+    .map(([emotion, value]) => [
+      emotion,
+      String(value.count),
+      `${Math.round((value.count / snapshots.length) * 100)}%`,
+      `${Math.round((value.confidenceTotal / value.count) * 100)}%`
+    ])
+    .sort((a, b) => Number(b[1]) - Number(a[1]));
+
+  return {
+    dominantEmotion: topEmotionRows[0]?.[0] || 'N/A',
+    positiveRate: Math.round((positiveCount / snapshots.length) * 100),
+    totalSnapshots: snapshots.length,
+    topEmotionRows
+  };
 };
 
 const drawSectionTitle = (doc, title, y) => {
@@ -411,6 +466,385 @@ export const generateProgressReportPdf = ({ userName, rangeMeta, summaryPayload,
   });
 
   const fileName = buildReportFileName(userName, rangeMeta);
+  doc.save(fileName);
+  return fileName;
+};
+
+export const generateHistoryExportPdf = ({ userName, rangeMeta, summaryPayload, sessions, filters = {} }) => {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const { summary, generatedAt } = summaryPayload;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const activeFilters = [
+    ['Period', rangeMeta.label],
+    ['Interview type', filters.type || 'All types'],
+    ['Difficulty', filters.difficulty || 'All levels'],
+    ['Sorted by', `${filters.sortBy === 'score' ? 'Score' : 'Date'} (${filters.order === 'asc' ? 'ascending' : 'descending'})`]
+  ];
+
+  doc.setFillColor(248, 250, 252);
+  doc.rect(0, 0, pageWidth, doc.internal.pageSize.getHeight(), 'F');
+
+  doc.setFillColor(...COLORS.teal);
+  doc.roundedRect(40, 60, 76, 76, 20, 20, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(26);
+  doc.setTextColor(15, 23, 42);
+  doc.text('IA', 78, 108, { align: 'center' });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(26);
+  doc.setTextColor(...COLORS.ink);
+  doc.text('IntervueAI Session History Export', 140, 92);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(13);
+  doc.setTextColor(...COLORS.muted);
+  doc.text(`Prepared for ${userName}`, 140, 118);
+  doc.text(`Filtered sessions: ${sessions.length}`, 140, 140);
+
+  autoTable(doc, {
+    startY: 198,
+    margin: { left: 40, right: 40 },
+    theme: 'grid',
+    head: [['Applied filter', 'Value']],
+    body: activeFilters,
+    styles: {
+      fontSize: 10,
+      cellPadding: 9,
+      textColor: COLORS.ink
+    },
+    headStyles: {
+      fillColor: COLORS.teal,
+      textColor: [15, 23, 42],
+      fontStyle: 'bold'
+    },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 150 },
+      1: { cellWidth: 330 }
+    }
+  });
+
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 20,
+    margin: { left: 40, right: 40 },
+    theme: 'grid',
+    body: [
+      ['Generated on', formatDateTime(generatedAt || new Date())],
+      ['Total exported sessions', String(sessions.length)],
+      ['Average score in export', `${summary.averageOverallScore}%`],
+      ['Best score in export', `${summary.bestScore}%`],
+      ['Lowest score in export', `${summary.worstScore}%`],
+      ['Total exported practice time', formatDuration(summary.totalPracticeTimeSeconds)]
+    ],
+    styles: {
+      fontSize: 10,
+      cellPadding: 9,
+      textColor: COLORS.ink
+    },
+    columnStyles: {
+      0: { fontStyle: 'bold', fillColor: COLORS.panel, cellWidth: 190 },
+      1: { cellWidth: 290 }
+    }
+  });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(...COLORS.muted);
+  doc.text(
+    'This PDF is a filtered session export. It is designed for reviewing and sharing exactly the sessions visible through your selected history filters, not for long-term trend analysis.',
+    40,
+    doc.lastAutoTable.finalY + 30,
+    { maxWidth: 515 }
+  );
+
+  doc.addPage();
+  drawHeaderFooter(doc, { userName, periodLabel: `History export: ${rangeMeta.label}` });
+  drawSectionTitle(doc, 'Exported Sessions', 64);
+
+  autoTable(doc, {
+    startY: 78,
+    margin: { left: 40, right: 40, top: 48, bottom: 34 },
+    theme: 'striped',
+    head: [['Date', 'Type', 'Difficulty', 'Questions', 'Expression', 'Speech', 'Content', 'Final', 'Grade']],
+    body: sessions.map((session) => [
+      formatShortDate(session.createdAt),
+      session.type,
+      session.difficulty,
+      String(session.totalQuestions),
+      `${clampNumber(session.expressionScore)}%`,
+      `${clampNumber(session.speechScore)}%`,
+      `${clampNumber(session.contentScore)}%`,
+      `${clampNumber(session.finalScore)}%`,
+      session.grade || 'N/A'
+    ]),
+    styles: {
+      fontSize: 8,
+      cellPadding: 6,
+      textColor: COLORS.ink,
+      valign: 'middle'
+    },
+    headStyles: {
+      fillColor: COLORS.purple,
+      textColor: [255, 255, 255],
+      fontStyle: 'bold'
+    },
+    columnStyles: {
+      0: { cellWidth: 58 },
+      1: { cellWidth: 58 },
+      2: { cellWidth: 58 },
+      3: { cellWidth: 48, halign: 'center' },
+      4: { cellWidth: 55, halign: 'center' },
+      5: { cellWidth: 48, halign: 'center' },
+      6: { cellWidth: 50, halign: 'center' },
+      7: { cellWidth: 48, halign: 'center', fontStyle: 'bold' },
+      8: { cellWidth: 40, halign: 'center', fontStyle: 'bold' }
+    },
+    alternateRowStyles: {
+      fillColor: [252, 252, 255]
+    },
+    didParseCell: ({ cell, column, row, section }) => {
+      if (section === 'body' && column.index === 8) {
+        cell.styles.textColor = gradeColor(row.raw[8]);
+      }
+    },
+    didDrawPage: () => drawHeaderFooter(doc, { userName, periodLabel: `History export: ${rangeMeta.label}` })
+  });
+
+  drawSectionTitle(doc, 'Quick Interpretation', doc.lastAutoTable.finalY + 30);
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 44,
+    margin: { left: 40, right: 40, top: 48, bottom: 34 },
+    theme: 'plain',
+    body: [
+      ['What this PDF is', 'A filtered export of saved sessions from the History page.'],
+      ['Best use', 'Use it to review a selected group of sessions, such as only HR interviews or only hard sessions.'],
+      ['Different from progress report', 'The Dashboard progress report focuses on long-term trends, repeated tips, question performance, and overall improvement.'],
+      ['Different from session report', 'A session report focuses on one interview attempt with transcripts, tips, and stronger answer suggestions.']
+    ],
+    styles: {
+      fontSize: 9,
+      cellPadding: 7,
+      textColor: COLORS.ink,
+      overflow: 'linebreak'
+    },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 150 },
+      1: { cellWidth: 340 }
+    },
+    didDrawPage: () => drawHeaderFooter(doc, { userName, periodLabel: `History export: ${rangeMeta.label}` })
+  });
+
+  const fileName = buildHistoryExportFileName(userName, rangeMeta);
+  doc.save(fileName);
+  return fileName;
+};
+
+export const generateSessionReportPdf = ({ userName, session }) => {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const emotionSummary = buildSessionEmotionSummary(session);
+  const answers = session.answers || [];
+  const sessionLabel = `${session.type} ${session.difficulty} session`;
+  const periodLabel = `Session: ${formatShortDate(session.createdAt)}`;
+
+  doc.setFillColor(248, 250, 252);
+  doc.rect(0, 0, pageWidth, doc.internal.pageSize.getHeight(), 'F');
+  doc.setFillColor(...COLORS.teal);
+  doc.roundedRect(40, 60, 76, 76, 20, 20, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(26);
+  doc.setTextColor(15, 23, 42);
+  doc.text('IA', 78, 108, { align: 'center' });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(26);
+  doc.setTextColor(...COLORS.ink);
+  doc.text('IntervueAI Session Report', 140, 92);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(13);
+  doc.setTextColor(...COLORS.muted);
+  doc.text(`Prepared for ${userName}`, 140, 118);
+  doc.text(`${sessionLabel} - ${formatDateTime(session.createdAt)}`, 140, 140);
+
+  autoTable(doc, {
+    startY: 205,
+    margin: { left: 40, right: 40 },
+    theme: 'grid',
+    body: [
+      ['Final score', `${clampNumber(session.finalScore)}%`],
+      ['Grade', session.grade || 'N/A'],
+      ['Questions answered', `${answers.length} of ${session.totalQuestions || answers.length}`],
+      ['Duration', formatDuration(session.duration || 0)],
+      ['Dominant emotion', emotionSummary.dominantEmotion],
+      ['Generated on', formatDateTime(new Date())]
+    ],
+    styles: {
+      fontSize: 10,
+      cellPadding: 10,
+      textColor: COLORS.ink
+    },
+    columnStyles: {
+      0: { fontStyle: 'bold', fillColor: COLORS.panel, cellWidth: 180 },
+      1: { cellWidth: 255 }
+    },
+    didParseCell: ({ cell, column, row, section }) => {
+      if (section === 'body' && row.raw[0] === 'Grade' && column.index === 1) {
+        cell.styles.textColor = gradeColor(row.raw[1]);
+        cell.styles.fontStyle = 'bold';
+      }
+    }
+  });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.setTextColor(...COLORS.muted);
+  doc.text(
+    'This session report focuses on one interview practice attempt. It includes the final score, expression signals, speech and answer scores, transcripts, coaching tips, and stronger answer suggestions.',
+    40,
+    doc.lastAutoTable.finalY + 34,
+    { maxWidth: 515 }
+  );
+
+  doc.addPage();
+  drawHeaderFooter(doc, { userName, periodLabel });
+
+  let cursorY = 64;
+  drawSectionTitle(doc, 'Session Score Breakdown', cursorY);
+  cursorY = drawMetricGrid(
+    doc,
+    [
+      { label: 'Overall readiness', value: `${clampNumber(session.finalScore)}%` },
+      { label: 'Letter grade', value: session.grade || 'N/A' },
+      { label: 'Expression score', value: `${clampNumber(session.expressionScore)}%` },
+      { label: 'Speech score', value: `${clampNumber(session.speechScore)}%` },
+      { label: 'Content score', value: `${clampNumber(session.contentScore)}%` },
+      { label: 'Positive expression frames', value: `${emotionSummary.positiveRate}%` }
+    ],
+    74
+  );
+
+  drawSectionTitle(doc, 'Emotion Feedback', cursorY + 10);
+  autoTable(doc, {
+    startY: cursorY + 24,
+    margin: { left: 40, right: 40, top: 48, bottom: 34 },
+    theme: 'striped',
+    head: [['Emotion', 'Frames', 'Share', 'Avg. confidence']],
+    body: emotionSummary.topEmotionRows.length
+      ? emotionSummary.topEmotionRows
+      : [['No snapshots captured', '0', '0%', '0%']],
+    styles: {
+      fontSize: 9,
+      cellPadding: 7,
+      textColor: COLORS.ink
+    },
+    headStyles: {
+      fillColor: COLORS.purple,
+      textColor: [255, 255, 255],
+      fontStyle: 'bold'
+    },
+    alternateRowStyles: {
+      fillColor: [252, 252, 255]
+    },
+    didDrawPage: () => drawHeaderFooter(doc, { userName, periodLabel })
+  });
+
+  const tips = aggregateTips(answers);
+  drawSectionTitle(doc, 'Session Coaching Tips', doc.lastAutoTable.finalY + 30);
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 44,
+    margin: { left: 40, right: 40, top: 48, bottom: 34 },
+    theme: 'plain',
+    body: tips.length ? tips.map((tip, index) => [`${index + 1}.`, tip]) : [['-', 'No specific tips were generated for this session.']],
+    styles: {
+      fontSize: 9,
+      cellPadding: 7,
+      textColor: COLORS.ink,
+      overflow: 'linebreak'
+    },
+    columnStyles: {
+      0: { cellWidth: 28, fontStyle: 'bold', textColor: COLORS.purple },
+      1: { cellWidth: 470 }
+    },
+    didDrawPage: () => drawHeaderFooter(doc, { userName, periodLabel })
+  });
+
+  doc.addPage();
+  drawHeaderFooter(doc, { userName, periodLabel });
+  drawSectionTitle(doc, 'Question-by-Question Review', 64);
+
+  autoTable(doc, {
+    startY: 78,
+    margin: { left: 40, right: 40, top: 48, bottom: 34 },
+    theme: 'striped',
+    head: [['#', 'Question', 'Transcript', 'Rel.', 'Flu.', 'Clar.', 'Avg.']],
+    body: answers.map((answer, index) => [
+      String(index + 1),
+      getQuestionText(answer, index),
+      answer.transcript || 'No answer submitted.',
+      `${clampNumber(answer.relevanceScore, 10)}/10`,
+      `${clampNumber(answer.fluencyScore, 10)}/10`,
+      `${clampNumber(answer.clarityScore, 10)}/10`,
+      `${answerAverage(answer)}/10`
+    ]),
+    styles: {
+      fontSize: 7.5,
+      cellPadding: 5,
+      textColor: COLORS.ink,
+      overflow: 'linebreak',
+      valign: 'top'
+    },
+    headStyles: {
+      fillColor: COLORS.teal,
+      textColor: [15, 23, 42],
+      fontStyle: 'bold'
+    },
+    columnStyles: {
+      0: { cellWidth: 24, halign: 'center' },
+      1: { cellWidth: 135 },
+      2: { cellWidth: 170 },
+      3: { cellWidth: 42, halign: 'center' },
+      4: { cellWidth: 42, halign: 'center' },
+      5: { cellWidth: 42, halign: 'center' },
+      6: { cellWidth: 42, halign: 'center', fontStyle: 'bold' }
+    },
+    alternateRowStyles: {
+      fillColor: [252, 252, 255]
+    },
+    didDrawPage: () => drawHeaderFooter(doc, { userName, periodLabel })
+  });
+
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 24,
+    margin: { left: 40, right: 40, top: 48, bottom: 34 },
+    theme: 'grid',
+    head: [['Question', 'Suggested stronger answer', 'Coach tips']],
+    body: answers.map((answer, index) => [
+      getQuestionText(answer, index),
+      getReadableSampleAnswer(getQuestionText(answer, index), answer.sampleAnswer),
+      answer.tips?.length ? answer.tips.join('\n') : 'No tips generated.'
+    ]),
+    styles: {
+      fontSize: 8,
+      cellPadding: 6,
+      textColor: COLORS.ink,
+      overflow: 'linebreak',
+      valign: 'top'
+    },
+    headStyles: {
+      fillColor: COLORS.purple,
+      textColor: [255, 255, 255],
+      fontStyle: 'bold'
+    },
+    columnStyles: {
+      0: { cellWidth: 130, fontStyle: 'bold' },
+      1: { cellWidth: 245 },
+      2: { cellWidth: 135 }
+    },
+    didDrawPage: () => drawHeaderFooter(doc, { userName, periodLabel })
+  });
+
+  const fileName = buildSessionReportFileName(userName, session);
   doc.save(fileName);
   return fileName;
 };

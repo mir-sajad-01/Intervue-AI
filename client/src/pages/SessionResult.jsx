@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
+import { Download } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Bar, BarChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import Loader from '../components/Loader';
 import ScoreCard from '../components/ScoreCard';
+import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { getReadableSampleAnswer } from '../utils/feedback';
+import { generateSessionReportPdf } from '../utils/report';
 import {
   aggregateTips,
   describePercentageScore,
@@ -99,6 +102,7 @@ const buildExpressionSummary = (session) => {
 const SessionResult = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -153,6 +157,18 @@ const SessionResult = () => {
     }
   };
 
+  const downloadSessionReport = () => {
+    try {
+      generateSessionReportPdf({
+        userName: user?.name || 'Candidate',
+        session
+      });
+      toast.success('Session report downloaded');
+    } catch (error) {
+      toast.error('Could not generate session report');
+    }
+  };
+
   return (
     <main className="mx-auto max-w-7xl px-4 py-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -169,6 +185,10 @@ const SessionResult = () => {
           <Link className="btn-secondary" to="/dashboard">
             Go to Dashboard
           </Link>
+          <button className="btn-secondary" onClick={downloadSessionReport}>
+            <Download size={16} />
+            Download Session Report
+          </button>
           <button className="btn-secondary" onClick={deleteSession}>
             Delete Session
           </button>

@@ -6,7 +6,7 @@ import Loader from '../components/Loader';
 import ReportDateRangePicker from '../components/ReportDateRangePicker';
 import api from '../utils/api';
 import { formatDate, gradeTone } from '../utils/helpers';
-import { generateProgressReportPdf, resolveReportRange } from '../utils/report';
+import { generateHistoryExportPdf, resolveReportRange } from '../utils/report';
 import { useAuth } from '../context/AuthContext';
 
 const cleanParams = (params) =>
@@ -63,11 +63,12 @@ const History = () => {
         return;
       }
 
-      generateProgressReportPdf({
+      generateHistoryExportPdf({
         userName: user.name,
         rangeMeta,
         summaryPayload: summaryResponse.data,
-        sessions: sessionsResponse.data.sessions
+        sessions: sessionsResponse.data.sessions,
+        filters
       });
       toast.success('Filtered sessions exported');
     } catch (err) {
@@ -100,7 +101,7 @@ const History = () => {
         <h1 className="text-3xl font-black text-slate-950 dark:text-white">Session History</h1>
         <button className="btn-primary" onClick={exportSessions} disabled={exporting}>
           <Download size={16} />
-          {exporting ? 'Preparing PDF...' : 'Export filtered sessions as PDF'}
+          {exporting ? 'Preparing PDF...' : 'Export Session History PDF'}
         </button>
       </div>
       <div className="panel mb-6 space-y-4 p-4">
@@ -123,7 +124,9 @@ const History = () => {
             onFromChange={(value) => setFilters((current) => ({ ...current, startDate: value, page: 1 }))}
             onToChange={(value) => setFilters((current) => ({ ...current, endDate: value, page: 1 }))}
           />
-          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Export filtered sessions as PDF.</p>
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+            Exports only the sessions matching these History filters.
+          </p>
         </div>
       </div>
       {error && <div className="panel mb-4 p-4 text-sm text-rose-300">{error}</div>}
