@@ -196,7 +196,7 @@ const Interview = () => {
               className="input mt-4"
               value={setup.topic}
               onChange={(e) => setSetup({ ...setup, topic: e.target.value })}
-              placeholder="What do you want to prepare? Example: React hooks, data analyst SQL, AWS DevOps, nursing interview"
+              placeholder="Describe the interview you want to practice. Example: I have an EPAM HR interview, take my mock interview."
             />
           )}
           <label className="mt-4 flex items-center gap-3 text-sm text-slate-700 dark:text-slate-300">

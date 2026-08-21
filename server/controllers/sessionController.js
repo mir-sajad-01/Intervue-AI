@@ -83,13 +83,18 @@ export const startSession = async (req, res, next) => {
     let questions = [];
 
     if (type === 'Custom') {
-      const generated = await generateInterviewQuestions({ topic, difficulty, totalQuestions: requestedCount });
+      const generated = await generateInterviewQuestions({
+        topic,
+        difficulty,
+        totalQuestions: requestedCount
+      });
+
       questions = generated.map((item) => ({
         _id: new Question()._id,
         text: item.text,
         category: 'Custom',
         difficulty,
-        tags: ['custom', topic.trim().toLowerCase()]
+        tags: item.tags || ['custom', 'interview']
       }));
     } else {
       const query = type === 'Mixed' ? { category: { $in: ['HR', 'Technical', 'Behavioural', 'Mixed'] } } : { category: type };
