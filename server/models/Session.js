@@ -4,6 +4,11 @@ const answerSchema = new mongoose.Schema(
   {
     questionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Question', required: true },
     transcript: { type: String, default: '' },
+    evaluationSource: {
+      type: String,
+      enum: ['gemini', 'fallback'],
+      default: 'fallback'
+    },
     relevanceScore: { type: Number, min: 0, max: 10, default: 0 },
     fluencyScore: { type: Number, min: 0, max: 10, default: 0 },
     clarityScore: { type: Number, min: 0, max: 10, default: 0 },

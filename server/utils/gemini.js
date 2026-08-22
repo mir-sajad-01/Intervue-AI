@@ -376,6 +376,7 @@ const fallbackFeedback = (errorMessage, question, transcript) => {
     relevanceScore: scores.relevanceScore,
     fluencyScore: scores.fluencyScore,
     clarityScore: scores.clarityScore,
+     evaluationSource: 'fallback',
 
     tips:
       template?.tips || [
@@ -686,7 +687,7 @@ Do not use code fences.
 
     return {
       ...scores,
-
+      evaluationSource: 'gemini',
       tips:
         tips.length === 3
           ? tips
