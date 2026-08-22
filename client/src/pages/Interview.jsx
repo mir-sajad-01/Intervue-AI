@@ -34,6 +34,7 @@ const Interview = () => {
   const emotionErrorShownRef = useRef(false);
   const emotionUnavailableRef = useRef(false);
   const emotionFailureCountRef = useRef(0);
+  const startingSessionRef = useRef(false);
   const [startedAt, setStartedAt] = useState(null);
   const secondsPerQuestion = difficultySeconds[setup.difficulty];
   const current = questions[index];
@@ -128,20 +129,41 @@ const Interview = () => {
   }, [countdown]);
 
   const start = async () => {
-    try {
-      if (setup.type === 'Custom' && setup.topic.trim().length < 2) {
-        toast.error('Enter what you want to prepare for');
-        return;
-      }
-      const { data } = await api.post('/sessions/start', setup);
-      setSession(data.session);
-      setQuestions(data.questions);
-      setStartedAt(Date.now());
-      setCountdown(3);
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Could not start session');
-    }
-  };
+  // Prevent duplicate session-start requests
+  if (startingSessionRef.current) {
+    return;
+  }
+
+  if (
+    setup.type === 'Custom' &&
+    setup.topic.trim().length < 2
+  ) {
+    toast.error('Enter what you want to prepare for');
+    return;
+  }
+
+  startingSessionRef.current = true;
+
+  try {
+    const { data } = await api.post(
+      '/sessions/start',
+      setup
+    );
+
+    setSession(data.session);
+    setQuestions(data.questions);
+    setStartedAt(Date.now());
+    setCountdown(3);
+  } catch (error) {
+    toast.error(
+      error.response?.data?.message ||
+      'Could not start session'
+    );
+
+    // Allow another attempt if the request failed
+    startingSessionRef.current = false;
+  }
+};
 
   const stopSession = async () => {
     if (!session || stopping) return;
