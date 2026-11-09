@@ -9,9 +9,9 @@ const WebcamCapture = ({ webcam }) => {
 
   return (
     <div className="panel overflow-hidden">
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
         <span className="text-sm font-semibold text-slate-900 dark:text-white">Webcam</span>
-        <Camera size={18} className="text-[#4ECDC4]" />
+        <Camera size={18} className="text-indigo-600 dark:text-indigo-400" />
       </div>
       {webcam.error ? (
         <div className="p-6 text-sm text-rose-600 dark:text-rose-300">{webcam.error}</div>

@@ -1,22 +1,25 @@
 import { analyzeEmotion } from '../utils/huggingface.js';
 import Session from '../models/Session.js';
 import SessionSnapshot from '../models/SessionSnapshot.js';
+import { sendApiError } from '../middleware/errorMiddleware.js';
 
 export const analyzeEmotionFrame = async (req, res, next) => {
   try {
     const { imageBase64, sessionId } = req.body;
     if (!imageBase64) {
-      return res.status(400).json({ message: 'imageBase64 is required' });
+      return sendApiError(res, { statusCode: 422, code: 'IMAGE_REQUIRED', message: 'Allow camera access or continue without expression analysis.', requestId: req.requestId });
+    }
+
+    let session = null;
+    if (sessionId) {
+      session = await Session.findOne({ _id: sessionId, userId: req.user._id });
+      if (!session) return sendApiError(res, { statusCode: 404, code: 'SESSION_NOT_FOUND', message: 'We could not find this interview session.', requestId: req.requestId });
+      if (session.status === 'completed') return sendApiError(res, { statusCode: 409, code: 'SESSION_ALREADY_COMPLETED', message: 'This interview session has ended.', requestId: req.requestId });
     }
 
     const result = await analyzeEmotion(imageBase64);
 
     if (sessionId) {
-      const session = await Session.findOne({ _id: sessionId, userId: req.user._id });
-      if (!session) {
-        return res.status(404).json({ message: 'Session not found' });
-      }
-
       const snapshot = await SessionSnapshot.create({
         sessionId,
         emotion: result.emotion,
@@ -34,10 +37,13 @@ export const analyzeEmotionFrame = async (req, res, next) => {
 
     res.json(result);
   } catch (error) {
-    console.error(`Emotion analysis failed: ${error.message}`);
-    res.status(502).json({
-      message: 'Emotion model request failed',
-      detail: process.env.NODE_ENV === 'production' ? undefined : error.message
+    console.error(`[${req.requestId || 'no-request-id'}] Emotion analysis failed: ${error.message}`);
+    sendApiError(res, {
+      statusCode: 502,
+      code: 'EMOTION_MODEL_UNAVAILABLE',
+      message: 'Expression analysis is temporarily unavailable. Your interview can continue without it.',
+      requestId: req.requestId,
+      debug: process.env.NODE_ENV === 'production' ? undefined : { message: error.message }
     });
   }
 };

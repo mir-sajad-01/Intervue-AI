@@ -1,45 +1,34 @@
-import axios from 'axios';
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import api from '../utils/api';
+import api, { setAccessToken } from '../utils/api';
+import { queryClient } from '../lib/queryClient';
 
 const AuthContext = createContext(null);
-const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
-
-const decodeJwtPayload = (token) => {
-  try {
-    const payload = token.split('.')[1];
-    if (!payload) return null;
-    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const decoded = atob(normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '='));
-    return JSON.parse(decoded);
-  } catch {
-    return null;
-  }
-};
-
-const isExpired = (token) => {
-  const payload = decodeJwtPayload(token);
-  if (!payload?.exp) return true;
-  return payload.exp * 1000 <= Date.now() + 5000;
-};
-
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const bootstrappedRef = useRef(false);
 
-  const clearStoredAuth = () => {
+  const updateUser = useCallback((nextUser) => {
+    if (nextUser) localStorage.setItem('user', JSON.stringify(nextUser));
+    else localStorage.removeItem('user');
+    setUser(nextUser);
+  }, []);
+
+  const clearStoredAuth = useCallback(() => {
+    setAccessToken(null);
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
     setUser(null);
-  };
+    queryClient.clear();
+  }, []);
 
   const persist = (payload) => {
-    localStorage.setItem('accessToken', payload.accessToken);
-    localStorage.setItem('refreshToken', payload.refreshToken);
+    setAccessToken(payload.accessToken);
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
     localStorage.setItem('user', JSON.stringify(payload.user));
     setUser(payload.user);
   };
@@ -67,52 +56,57 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
-    const refreshToken = localStorage.getItem('refreshToken');
-    await api.post('/auth/logout', { refreshToken }).catch(() => null);
+    const legacyRefreshToken = localStorage.getItem('refreshToken');
+    await api.post('/auth/logout', legacyRefreshToken ? { refreshToken: legacyRefreshToken } : {}).catch(() => null);
     clearStoredAuth();
   };
 
   const refreshProfile = async () => {
     const { data } = await api.get('/auth/profile');
-    localStorage.setItem('user', JSON.stringify(data.user));
-    setUser(data.user);
+    updateUser(data.user);
     return data;
   };
 
-  const refreshAccessToken = async (refreshToken) => {
-    const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken });
-    localStorage.setItem('accessToken', data.accessToken);
+  const refreshAccessToken = async (legacyRefreshToken) => {
+    const { data } = await api.post('/auth/refresh', legacyRefreshToken ? { refreshToken: legacyRefreshToken } : {});
+    setAccessToken(data.accessToken);
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
     return data.accessToken;
   };
+
+  useEffect(() => {
+    const handleAuthExpired = () => clearStoredAuth();
+    window.addEventListener('auth:expired', handleAuthExpired);
+
+    return () => window.removeEventListener('auth:expired', handleAuthExpired);
+  }, [clearStoredAuth]);
 
   useEffect(() => {
     if (bootstrappedRef.current) return;
     bootstrappedRef.current = true;
 
     const bootstrapAuth = async () => {
-      const accessToken = localStorage.getItem('accessToken');
-      const refreshToken = localStorage.getItem('refreshToken');
+      const cachedUser = localStorage.getItem('user');
+      const legacyAccessToken = localStorage.getItem('accessToken');
+      const legacyRefreshToken = localStorage.getItem('refreshToken');
 
-      if (!accessToken && !refreshToken) {
-        clearStoredAuth();
-        setCheckingAuth(false);
-        return;
+      if (cachedUser) {
+        try {
+          setUser(JSON.parse(cachedUser));
+        } catch {
+          localStorage.removeItem('user');
+        }
       }
+      setAccessToken(legacyAccessToken);
 
       try {
-        if (!refreshToken || isExpired(refreshToken)) {
-          clearStoredAuth();
-          setCheckingAuth(false);
-          return;
-        }
-
-        if (!accessToken || isExpired(accessToken)) {
-          await refreshAccessToken(refreshToken);
-        }
-
+        // Refresh tokens live in an HttpOnly cookie, which JavaScript cannot
+        // inspect. Attempt refresh even if local profile storage was cleared.
+        await refreshAccessToken(legacyRefreshToken);
         await refreshProfile();
-      } catch {
-        clearStoredAuth();
+      } catch (error) {
+        if ([401, 403].includes(error.response?.status)) clearStoredAuth();
       } finally {
         setCheckingAuth(false);
       }
@@ -122,8 +116,8 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, checkingAuth, register, login, logout, refreshProfile, setUser }),
-    [user, loading, checkingAuth]
+    () => ({ user, loading, checkingAuth, register, login, logout, refreshProfile, setUser: updateUser }),
+    [user, loading, checkingAuth, updateUser]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

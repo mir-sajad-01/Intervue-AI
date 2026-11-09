@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const speechErrorMessage = (errorCode) => {
   switch (errorCode) {
@@ -22,10 +22,28 @@ const speechErrorMessage = (errorCode) => {
 
 export const useSpeech = () => {
   const recognitionRef = useRef(null);
+  const transcriptRef = useRef('');
+  const manualBaseRef = useRef('');
+  const resultSegmentsRef = useRef(new Map());
+  const ignoredResultsBeforeRef = useRef(0);
+  const resultCountRef = useRef(0);
   const [supported, setSupported] = useState(true);
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState('');
+
+  const updateTranscript = useCallback((value) => {
+    transcriptRef.current = value;
+    setTranscript(value);
+  }, []);
+
+  const editTranscript = useCallback((value) => {
+    const nextValue = String(value);
+    manualBaseRef.current = nextValue;
+    resultSegmentsRef.current.clear();
+    ignoredResultsBeforeRef.current = resultCountRef.current;
+    updateTranscript(nextValue);
+  }, [updateTranscript]);
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -39,23 +57,49 @@ export const useSpeech = () => {
     recognition.interimResults = true;
     recognition.lang = 'en-US';
     recognition.onresult = (event) => {
-      const text = Array.from(event.results)
-        .map((result) => result[0].transcript)
+      resultCountRef.current = event.results.length;
+      const firstChangedResult = Math.max(event.resultIndex || 0, ignoredResultsBeforeRef.current);
+      for (let index = firstChangedResult; index < event.results.length; index += 1) {
+        resultSegmentsRef.current.set(index, event.results[index][0].transcript.trim());
+      }
+
+      const recognizedText = [...resultSegmentsRef.current.entries()]
+        .sort(([left], [right]) => left - right)
+        .map(([, text]) => text)
+        .filter(Boolean)
         .join(' ');
-      setTranscript(text);
+      const transcriptParts = [manualBaseRef.current.trim(), recognizedText].filter(Boolean);
+      updateTranscript(transcriptParts.join(' ').trim());
       setError('');
     };
     recognition.onerror = (event) => {
       setError(speechErrorMessage(event.error));
       setListening(false);
     };
-    recognition.onend = () => setListening(false);
+    recognition.onend = () => {
+      setListening(false);
+    };
     recognitionRef.current = recognition;
-  }, []);
 
-  const start = () => {
+    return () => {
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      try {
+        recognition.stop();
+      } catch {
+        // The browser may already have stopped recognition during unmount.
+      }
+    };
+  }, [updateTranscript]);
+
+  const start = useCallback(() => {
     if (!supported || !recognitionRef.current) return;
     setError('');
+    manualBaseRef.current = transcriptRef.current;
+    resultSegmentsRef.current.clear();
+    ignoredResultsBeforeRef.current = 0;
+    resultCountRef.current = 0;
     try {
       recognitionRef.current.start();
       setListening(true);
@@ -63,12 +107,16 @@ export const useSpeech = () => {
       setListening(false);
       setError(speechErrorMessage(error?.name));
     }
-  };
+  }, [supported]);
 
-  const stop = () => {
-    recognitionRef.current?.stop();
+  const stop = useCallback(() => {
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      // Ignore invalid-state errors when recognition has already stopped.
+    }
     setListening(false);
-  };
+  }, []);
 
-  return { supported, listening, transcript, error, start, stop, setTranscript };
+  return { supported, listening, transcript, error, start, stop, setTranscript: editTranscript };
 };

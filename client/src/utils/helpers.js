@@ -20,11 +20,11 @@ export const emotionTone = (emotion) => {
 
 export const gradeTone = (grade) =>
   ({
-    A: 'text-[#4ECDC4]',
-    B: 'text-[#6C63FF]',
-    C: 'text-amber-400',
-    D: 'text-orange-400',
-    F: 'text-rose-400'
+    A: 'text-emerald-700 dark:text-emerald-300',
+    B: 'text-indigo-700 dark:text-indigo-300',
+    C: 'text-amber-700 dark:text-amber-300',
+    D: 'text-orange-700 dark:text-orange-300',
+    F: 'text-rose-700 dark:text-rose-300'
   })[grade] || 'text-slate-600';
 
 export const formatDate = (value) =>

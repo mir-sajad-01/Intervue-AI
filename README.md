@@ -164,6 +164,7 @@ Most interview prep tools tell you *what* to say. IntervueAI tells you *how* you
 | Tailwind CSS | Styling and responsive design |
 | Recharts | Score trend, emotion timeline, bar charts |
 | React Router | Client-side routing |
+| TanStack Query | Cached server state, retries, and mutation invalidation |
 | Axios | HTTP requests with interceptors |
 | React Hot Toast | Notifications |
 | Web Speech API | Browser-native speech transcription |
@@ -350,7 +351,7 @@ interview-platform/
 ## ⚙️ Setup
 
 ### Prerequisites
-- Node.js v18+
+- Node.js v22 or newer
 - MongoDB Atlas account (free tier)
 - Google Gemini API key ([get here](https://aistudio.google.com))
 - Git
@@ -379,14 +380,7 @@ cp client/.env.example client/.env
 
 Edit `server/.env` — see [Environment Variables](#-environment-variables) below.
 
-### 4. Seed the question bank
-
-```bash
-cd server
-node data/seed.js
-```
-
-### 5. Run the development server
+### 4. Run the development server
 
 ```bash
 # From root directory
@@ -395,8 +389,10 @@ npm run dev
 
 | Service | URL |
 |---|---|
-| Frontend | http://localhost:5173 |
+| Frontend | http://127.0.0.1:5173 |
 | Backend | http://localhost:5000 |
+
+Run `npm test` for the schema and validation checks, and `npm run build` for the production client bundle.
 
 ---
 
@@ -407,9 +403,10 @@ npm run dev
 ```dotenv
 PORT=5000
 MONGODB_URI=mongodb+srv://<user>:<password>@cluster0.xxxxx.mongodb.net/intervueai
-JWT_SECRET=your_64_character_random_secret
-JWT_REFRESH_SECRET=your_64_character_random_refresh_secret
+JWT_SECRET=replace_with_a_random_secret_of_at_least_32_characters
+JWT_REFRESH_SECRET=replace_with_a_different_random_secret_of_at_least_32_characters
 GEMINI_API_KEY=your_gemini_api_key
+GEMINI_TIMEOUT_MS=20000
 HF_SPACE_URL=https://mir-sajad-01-facial-expression-recognition.hf.space
 HF_API_URL=https://mir-sajad-01-facial-expression-recognition.hf.space/gradio_api/run/predict_emotion
 CLIENT_URL=http://localhost:5173
@@ -423,6 +420,8 @@ VITE_API_URL=http://localhost:5000
 
 > **Generate JWT secrets:** Run `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"` in your terminal.
 
+In production, set `NODE_ENV=production`, use different randomly generated JWT secrets, and set `CLIENT_URL` to the exact HTTPS frontend origin. Set the client build variable `VITE_API_URL` to the HTTPS API URL, or `/api` when the host proxies API requests on the same origin. For cookie-based session renewal, use a custom domain with the frontend and API on the same site (for example, `app.example.com` and `api.example.com`) or proxy the API through the frontend origin. Do not deploy the example values.
+
 > ⚠️ Never commit `.env` files. They are in `.gitignore` by default.
 
 ---
@@ -434,9 +433,9 @@ VITE_API_URL=http://localhost:5000
 | Method | Endpoint | Body | Description |
 |---|---|---|---|
 | POST | `/api/auth/register` | `{ name, email, password }` | Create account |
-| POST | `/api/auth/login` | `{ email, password }` | Login, returns tokens |
-| POST | `/api/auth/refresh` | `{ refreshToken }` | Get new access token |
-| POST | `/api/auth/logout` | `{ refreshToken }` | Invalidate refresh token |
+| POST | `/api/auth/login` | `{ email, password }` | Login, returns an access token and sets an HttpOnly refresh cookie |
+| POST | `/api/auth/refresh` | — | Rotate the refresh cookie and get a new access token |
+| POST | `/api/auth/logout` | — | Revoke the refresh session and clear its cookie |
 | GET | `/api/auth/profile` | — | Get current user |
 | PUT | `/api/auth/profile` | `{ name, email }` | Update profile |
 | PUT | `/api/auth/password` | `{ oldPassword, newPassword }` | Change password |
@@ -554,16 +553,17 @@ npm run build
 1. Push to GitHub
 2. Import repo in [vercel.com](https://vercel.com)
 3. Set root directory to `client`
-4. Add environment variable: `VITE_API_URL=https://your-render-backend.onrender.com`
+4. Add `VITE_API_URL` using an HTTPS API origin. For reliable refresh cookies, configure both services under the same custom domain or proxy `/api` through the frontend origin.
 
 ### Backend → Render
 
 1. Create new **Web Service** on [render.com](https://render.com)
 2. Connect GitHub repo, set root directory to `server`
-3. Build command: `npm install`
-4. Start command: `node server.js`
-5. Add all server environment variables in Render dashboard
-6. Set `CLIENT_URL` to your Vercel frontend URL
+3. Use Node.js 22 or newer.
+4. Build command: `npm ci`
+5. Start command: `npm start`
+6. Set `NODE_ENV=production` and all required secrets and service URLs in the Render dashboard.
+7. Set `CLIENT_URL` to the exact HTTPS frontend origin. The API refuses weak JWT secrets or non-HTTPS production origins at startup.
 
 ---
 

@@ -84,14 +84,3 @@ export const questions = [
   ...byDifficulty(technical, 'Technical', ['technical']),
   ...byDifficulty(mixed, 'Mixed', ['general'])
 ];
-
-export const seedQuestions = async (Question) => {
-  const count = await Question.countDocuments();
-  if (count > 0) {
-    console.log(`Question bank already seeded with ${count} questions`);
-    return;
-  }
-
-  await Question.insertMany(questions);
-  console.log(`Seeded ${questions.length} interview questions`);
-};

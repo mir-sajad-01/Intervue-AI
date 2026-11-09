@@ -1,4 +1,4 @@
-import { REPORT_PRESETS, resolveReportRange } from '../utils/report';
+import { REPORT_PRESETS, resolveReportRange } from '../utils/reportRange';
 
 const ReportDateRangePicker = ({
   preset,
@@ -6,7 +6,8 @@ const ReportDateRangePicker = ({
   to,
   onPresetChange,
   onFromChange,
-  onToChange
+  onToChange,
+  error = ''
 }) => {
   const selectPreset = (nextPreset) => {
     if (nextPreset === 'custom') {
@@ -38,14 +39,15 @@ const ReportDateRangePicker = ({
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-sm text-slate-600 dark:text-slate-300">
             <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">From</span>
-            <input className="input" type="date" value={from} onChange={(event) => onFromChange(event.target.value)} />
+            <input className="input" type="date" value={from} aria-invalid={Boolean(error)} aria-describedby={error ? 'report-range-error' : undefined} onChange={(event) => onFromChange(event.target.value)} />
           </label>
           <label className="text-sm text-slate-600 dark:text-slate-300">
             <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">To</span>
-            <input className="input" type="date" value={to} onChange={(event) => onToChange(event.target.value)} />
+            <input className="input" type="date" value={to} aria-invalid={Boolean(error)} aria-describedby={error ? 'report-range-error' : undefined} onChange={(event) => onToChange(event.target.value)} />
           </label>
         </div>
       )}
+      {error ? <p id="report-range-error" role="alert" className="text-sm text-rose-600 dark:text-rose-400">{error}</p> : null}
     </div>
   );
 };

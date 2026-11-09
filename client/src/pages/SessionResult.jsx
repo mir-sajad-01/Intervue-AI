@@ -1,14 +1,21 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { Download } from 'lucide-react';
+import { Activity, Award, Brain, Download, Mic2, Share2, Video } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Bar, BarChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import Loader from '../components/Loader';
 import ScoreCard from '../components/ScoreCard';
+import AppDialog from '../components/AppDialog';
+import RequestError from '../components/RequestError';
+import PageHeader from '../components/PageHeader';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
+import { useSession } from '../hooks/queries';
+import { queryKeys } from '../lib/queryClient';
+import { getErrorMessage } from '../utils/errors';
 import { getReadableSampleAnswer } from '../utils/feedback';
-import { generateSessionReportPdf } from '../utils/report';
+import { chartAxisProps, chartTooltipProps } from '../utils/chartTheme';
 import {
   aggregateTips,
   describePercentageScore,
@@ -103,15 +110,23 @@ const SessionResult = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    api
-      .get(`/sessions/${id}`)
-      .then(({ data }) => setSession(data.session))
-      .finally(() => setLoading(false));
-  }, [id]);
+  const { data: session, isPending: loading, error } = useSession(id);
+  const queryClient = useQueryClient();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const deleteMutation = useMutation({
+    mutationFn: (sessionId) => api.delete(`/sessions/${sessionId}`),
+    onSuccess: async () => {
+      queryClient.removeQueries({ queryKey: queryKeys.session(session._id) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.sessions }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.profile })
+      ]);
+      toast.success('Session deleted');
+      navigate('/history');
+    },
+    onError: (deleteError) => toast.error(getErrorMessage(deleteError, 'Could not delete session'))
+  });
 
   const breakdown = useMemo(
     () =>
@@ -135,7 +150,7 @@ const SessionResult = () => {
     );
   }
 
-  if (!session) return <main className="mx-auto max-w-7xl px-4 py-8">Session not found.</main>;
+  if (error || !session) return <main className="page-shell mx-auto max-w-7xl px-4 sm:px-6"><RequestError title="Session unavailable" message={getErrorMessage(error, 'This session could not be found.')} onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.session(id) })} /><Link to="/history" className="btn-secondary mt-4">Back to history</Link></main>;
 
   const timeline = session.emotionTimeline.map((item, index) => ({
     index: index + 1,
@@ -145,20 +160,12 @@ const SessionResult = () => {
   }));
 
   const deleteSession = async () => {
-    const confirmed = window.confirm('Delete this saved session permanently?');
-    if (!confirmed) return;
-
-    try {
-      await api.delete(`/sessions/${session._id}`);
-      toast.success('Session deleted');
-      navigate('/history');
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Could not delete session');
-    }
+    setDeleteDialogOpen(true);
   };
 
-  const downloadSessionReport = () => {
+  const downloadSessionReport = async () => {
     try {
+      const { generateSessionReportPdf } = await import('../utils/report.js');
       generateSessionReportPdf({
         userName: user?.name || 'Candidate',
         session
@@ -169,44 +176,39 @@ const SessionResult = () => {
     }
   };
 
-  return (
-    <main className="mx-auto max-w-7xl px-4 py-8">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-black text-slate-950 dark:text-white">Session Result</h1>
-          <p className="text-sm text-slate-500">
-            {session.type} - {session.difficulty} - {formatDate(session.createdAt)}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Link className="btn-primary" to="/interview">
-            Practice Again
-          </Link>
-          <Link className="btn-secondary" to="/dashboard">
-            Go to Dashboard
-          </Link>
-          <button className="btn-secondary" onClick={downloadSessionReport}>
-            <Download size={16} />
-            Download Session Report
-          </button>
-          <button className="btn-secondary" onClick={deleteSession}>
-            Delete Session
-          </button>
-          <button
-            className="btn-secondary"
-            onClick={() =>
-              navigator.share?.({
-                title: 'IntervueAI Result',
-                text: `I scored ${session.finalScore}% (${session.grade}) on IntervueAI.`
-              })
-            }
-          >
-            Share Result
-          </button>
-        </div>
-      </div>
+  const shareResult = async () => {
+    const shareData = {
+      title: 'Intervue interview result',
+      text: `I scored ${session.finalScore}% (Grade ${session.grade}) on an interview practice session.`,
+      url: window.location.href
+    };
+    try {
+      if (navigator.share) await navigator.share(shareData);
+      else {
+        await navigator.clipboard.writeText(shareData.url);
+        toast.success('Result link copied');
+      }
+    } catch (shareError) {
+      if (shareError.name !== 'AbortError') toast.error('Could not share this result.');
+    }
+  };
 
-      <div className="grid gap-4 md:grid-cols-4">
+  return (
+    <main className="page-shell mx-auto max-w-7xl px-4 sm:px-6">
+      <PageHeader
+        eyebrow="Session review"
+        title={`${session.type} interview`}
+        description={`${session.difficulty} level — ${formatDate(session.createdAt)}`}
+        action={<div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+          <Link className="btn-primary" to="/interview"><Video size={16} />Practice again</Link>
+          <Link className="btn-secondary" to="/history">History</Link>
+          <button className="btn-secondary" type="button" onClick={downloadSessionReport}><Download size={16} />Download report</button>
+          <button className="btn-secondary" type="button" onClick={shareResult}><Share2 size={16} />Share result</button>
+          <button className="btn-danger col-span-2 sm:col-span-1" type="button" disabled={deleteMutation.isPending} onClick={deleteSession}>{deleteMutation.isPending ? 'Deleting…' : 'Delete session'}</button>
+        </div>}
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <ScoreCard
           label="Overall result"
           value={session.finalScore}
@@ -215,6 +217,7 @@ const SessionResult = () => {
           caption={describePercentageScore(session.finalScore)}
           description="Your complete interview readiness score."
           scaleLabel="0-100%"
+          icon={Award}
         />
         <ScoreCard
           label="Expression score"
@@ -224,6 +227,7 @@ const SessionResult = () => {
           description="Camera presence from happy and neutral expression snapshots."
           scaleLabel="0-100%"
           tone="teal"
+          icon={Brain}
         />
         <ScoreCard
           label="Speech score"
@@ -233,6 +237,7 @@ const SessionResult = () => {
           description="Speaking flow based on fluency feedback."
           scaleLabel="0-100%"
           tone="amber"
+          icon={Mic2}
         />
         <ScoreCard
           label="Content score"
@@ -242,13 +247,14 @@ const SessionResult = () => {
           description="Answer quality based on relevance and clarity."
           scaleLabel="0-100%"
           tone="purple"
+          icon={Activity}
         />
       </div>
 
       <section className="mt-4 panel p-5">
         <div className="grid gap-4 lg:grid-cols-[1.2fr_1.8fr]">
           <div>
-            <p className="text-xs font-black uppercase tracking-wide text-[#6C63FF] dark:text-[#4ECDC4]">Score guide</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">Score guide</p>
             <h2 className="mt-1 text-xl font-black text-slate-950 dark:text-white">How to read this result</h2>
             <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
               IntervueAI separates your performance into camera presence, speaking flow, and answer quality. The final score combines those areas into one easy percentage.
@@ -257,7 +263,7 @@ const SessionResult = () => {
           </div>
           <div className="grid gap-2 sm:grid-cols-5">
             {scoreGuide.map((item) => (
-              <div key={item.title} className="rounded-md border border-[#6C63FF]/20 bg-white/50 p-3 dark:border-white/10 dark:bg-white/5">
+              <div key={item.title} className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
                 <div className="text-sm font-black text-slate-950 dark:text-white">{item.title}</div>
                 <p className="mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">{item.text}</p>
               </div>
@@ -275,10 +281,13 @@ const SessionResult = () => {
           <div className="h-72">
             <ResponsiveContainer>
               <BarChart data={breakdown}>
-                <XAxis dataKey="name" />
-                <YAxis domain={[0, 100]} />
-                <Tooltip formatter={(value, name, item) => [`${value}%`, item.payload.meaning]} />
-                <Bar dataKey="score" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                <XAxis dataKey="name" {...chartAxisProps} />
+                <YAxis domain={[0, 100]} {...chartAxisProps} />
+                <Tooltip
+                  formatter={(value, name, item) => [`${value}%`, item.payload.meaning]}
+                  {...chartTooltipProps}
+                />
+                <Bar dataKey="score" fill="#15998d" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -291,10 +300,13 @@ const SessionResult = () => {
           <div className="h-72">
             <ResponsiveContainer>
               <LineChart data={timeline}>
-                <XAxis dataKey="index" />
-                <YAxis domain={[0, 7]} />
-                <Tooltip formatter={(value, name, item) => item.payload.emotion} />
-                <Line dataKey="value" stroke="#34d399" strokeWidth={3} dot={false} />
+                <XAxis dataKey="index" {...chartAxisProps} />
+                <YAxis domain={[0, 7]} {...chartAxisProps} />
+                <Tooltip
+                  formatter={(value, name, item) => item.payload.emotion}
+                  {...chartTooltipProps}
+                />
+                <Line dataKey="value" stroke="#10b981" strokeWidth={3} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -342,7 +354,7 @@ const SessionResult = () => {
         <h2 className="mb-3 font-bold text-slate-950 dark:text-white">Improvement Tips</h2>
         <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
           {aggregateTips(session.answers).map((tip) => (
-            <li key={tip}>- {tip}</li>
+            <li className="border-l-2 border-indigo-200 pl-3 dark:border-indigo-300" key={tip}>{tip}</li>
           ))}
         </ul>
       </section>
@@ -350,13 +362,13 @@ const SessionResult = () => {
       <section className="mt-6 panel p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-black uppercase tracking-wide text-[#6C63FF] dark:text-[#4ECDC4]">Answer review</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">Answer review</p>
             <h2 className="mt-1 text-xl font-black text-slate-950 dark:text-white">Question-by-question feedback</h2>
             <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
               These scores are per answer. A higher number means the answer was more interview-ready.
             </p>
           </div>
-          <div className="rounded-md border border-[#6C63FF]/20 bg-white/50 px-4 py-3 text-xs text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
             <span className="font-black text-slate-950 dark:text-white">Answer scale:</span> 0 weak, 5 fair, 10 excellent.
           </div>
         </div>
@@ -365,7 +377,7 @@ const SessionResult = () => {
       <section className="mt-4 space-y-4">
         {session.answers.map((answer, answerIndex) => (
           <article key={answer._id} className="panel overflow-hidden p-4">
-            <div className="rounded-md border border-[#6C63FF]/20 bg-gradient-to-r from-[#6C63FF]/10 to-[#4ECDC4]/10 p-4 dark:border-white/10">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">
               <p className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Question {answerIndex + 1}</p>
               <h3 className="mt-1 text-lg font-black text-slate-950 dark:text-white">{answer.questionId?.text}</h3>
             </div>
@@ -394,18 +406,18 @@ const SessionResult = () => {
             </div>
 
             <div className="mt-4 grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-              <div className="rounded-md border border-[#4ECDC4]/20 bg-[#4ECDC4]/10 p-4">
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 dark:border-indigo-300/10 dark:bg-indigo-400/10">
                 <p className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Suggested stronger answer</p>
                 <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
                   {getReadableSampleAnswer(answer.questionId?.text, answer.sampleAnswer)}
                 </p>
               </div>
-              <div className="rounded-md border border-[#6C63FF]/20 bg-white/50 p-4 dark:border-white/10 dark:bg-white/5">
+              <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
                 <p className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Coach tips for this answer</p>
                 {answer.tips?.length ? (
                   <ul className="mt-2 space-y-2 text-sm text-slate-600 dark:text-slate-300">
                     {answer.tips.map((tip) => (
-                      <li key={tip}>- {tip}</li>
+                      <li className="border-l-2 border-indigo-200 pl-3 dark:border-indigo-300" key={tip}>{tip}</li>
                     ))}
                   </ul>
                 ) : (
@@ -416,6 +428,17 @@ const SessionResult = () => {
           </article>
         ))}
       </section>
+      <AppDialog
+        open={deleteDialogOpen}
+        title="Delete this session?"
+        description="This permanently removes the session and its feedback from your history."
+        onClose={() => setDeleteDialogOpen(false)}
+        busy={deleteMutation.isPending}
+        actions={[
+          { label: 'Keep session', variant: 'secondary', onSelect: () => setDeleteDialogOpen(false) },
+          { label: 'Delete session', variant: 'danger', loadingLabel: 'Deleting…', onSelect: () => { setDeleteDialogOpen(false); deleteMutation.mutate(session._id); } }
+        ]}
+      />
     </main>
   );
 };
