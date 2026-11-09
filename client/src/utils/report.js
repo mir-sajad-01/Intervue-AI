@@ -2,31 +2,18 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getReadableSampleAnswer } from './feedback';
 import { aggregateTips, normalizeEmotion } from './helpers';
+export { REPORT_PRESETS, resolveReportRange, toDateInputValue } from './reportRange';
 
 const COLORS = {
-  ink: [15, 23, 42],
+  ink: [9, 26, 66],
   muted: [100, 116, 139],
-  purple: [108, 99, 255],
-  teal: [78, 205, 196],
+  purple: [5, 150, 105],
+  teal: [21, 153, 141],
   slate: [226, 232, 240],
   panel: [248, 250, 252],
   emerald: [16, 185, 129],
-  amber: [245, 158, 11],
-  rose: [244, 63, 94]
-};
-
-export const REPORT_PRESETS = [
-  { key: '7d', label: 'Last 7 days' },
-  { key: '30d', label: 'Last 30 days' },
-  { key: '3m', label: 'Last 3 months' },
-  { key: 'all', label: 'All time' },
-  { key: 'custom', label: 'Custom' }
-];
-
-export const toDateInputValue = (value) => {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toISOString().slice(0, 10);
+  amber: [234, 88, 12],
+  rose: [220, 38, 38]
 };
 
 const formatShortDate = (value) =>
@@ -34,60 +21,6 @@ const formatShortDate = (value) =>
 
 const formatDateTime = (value) =>
   new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
-
-const formatMonthLabel = (value) =>
-  new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(new Date(value));
-
-export const resolveReportRange = ({ preset = '30d', from = '', to = '' } = {}) => {
-  const now = new Date();
-  const endDate = new Date(now);
-  endDate.setHours(23, 59, 59, 999);
-
-  if (preset === 'all') {
-    return {
-      preset,
-      from: '',
-      to: '',
-      query: {},
-      label: 'All time',
-      fileLabel: 'AllTime'
-    };
-  }
-
-  let startDate = null;
-  let customEndDate = endDate;
-
-  if (preset === 'custom') {
-    startDate = from ? new Date(from) : null;
-    customEndDate = to ? new Date(to) : endDate;
-    if (startDate && !Number.isNaN(startDate.getTime())) startDate.setHours(0, 0, 0, 0);
-    if (customEndDate && !Number.isNaN(customEndDate.getTime())) customEndDate.setHours(23, 59, 59, 999);
-  } else {
-    startDate = new Date(endDate);
-    if (preset === '7d') startDate.setDate(startDate.getDate() - 6);
-    if (preset === '30d') startDate.setDate(startDate.getDate() - 29);
-    if (preset === '3m') startDate.setMonth(startDate.getMonth() - 3);
-    startDate.setHours(0, 0, 0, 0);
-  }
-
-  const safeStart = startDate && !Number.isNaN(startDate.getTime()) ? startDate : null;
-  const safeEnd = customEndDate && !Number.isNaN(customEndDate.getTime()) ? customEndDate : null;
-  const label = safeStart && safeEnd
-    ? `${formatShortDate(safeStart)} - ${formatShortDate(safeEnd)}`
-    : 'Custom period';
-
-  return {
-    preset,
-    from: safeStart ? toDateInputValue(safeStart) : '',
-    to: safeEnd ? toDateInputValue(safeEnd) : '',
-    query: {
-      from: safeStart ? safeStart.toISOString() : undefined,
-      to: safeEnd ? safeEnd.toISOString() : undefined
-    },
-    label,
-    fileLabel: safeStart ? formatMonthLabel(safeStart).replace(/\s+/g, '') : 'CustomPeriod'
-  };
-};
 
 const sanitizeFilePart = (value = '') =>
   String(value).replace(/[^a-z0-9]+/gi, '').trim() || 'User';
@@ -203,7 +136,7 @@ const drawPerformanceBars = (doc, performance, startY) => {
   const barLeft = 140;
   const barWidth = 300;
   const barHeight = 14;
-  const colors = [COLORS.purple, COLORS.teal, [14, 165, 233]];
+  const colors = [COLORS.purple, COLORS.teal, [37, 99, 235]];
 
   performance.chartData.forEach((item, index) => {
     const y = startY + index * 34;

@@ -1,90 +1,89 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 import { Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { Download, FileText } from 'lucide-react';
+import { Activity, Award, Download, FileText, Flame, Video } from 'lucide-react';
 import Loader from '../components/Loader';
 import ReportDateRangePicker from '../components/ReportDateRangePicker';
 import ScoreCard from '../components/ScoreCard';
+import PageHeader from '../components/PageHeader';
+import RequestError from '../components/RequestError';
+import EmptyState from '../components/EmptyState';
 import { useAuth } from '../context/AuthContext';
-import api from '../utils/api';
 import { formatDate } from '../utils/helpers';
-import { generateProgressReportPdf, resolveReportRange, toDateInputValue } from '../utils/report';
+import { chartAxisProps, chartTooltipProps } from '../utils/chartTheme';
+import { resolveReportRange, toDateInputValue } from '../utils/reportRange';
+import { useDashboardStats } from '../hooks/queries';
+import { getErrorMessage } from '../utils/errors';
+import { fetchSessionExport } from '../utils/sessionExport';
+import { getZodFieldErrors, reportRangeSchema } from '../schemas/validation';
+import api from '../utils/api';
 
-const colors = ['#06b6d4', '#34d399', '#f59e0b', '#fb7185', '#8b5cf6', '#64748b', '#ef4444'];
+const colors = ['#059669', '#10b981', '#15998d', '#0d9488', '#2563eb', '#047857', '#064e3b'];
 
 const Dashboard = () => {
   const { user, checkingAuth } = useAuth();
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const { data: stats, isPending: loading, error, refetch } = useDashboardStats(!checkingAuth && Boolean(user));
   const defaultRange = resolveReportRange({ preset: '30d' });
   const [reportPreset, setReportPreset] = useState('30d');
   const [reportFrom, setReportFrom] = useState(defaultRange.from || toDateInputValue(new Date()));
   const [reportTo, setReportTo] = useState(defaultRange.to || toDateInputValue(new Date()));
+  const [rangeError, setRangeError] = useState('');
   const [exporting, setExporting] = useState(false);
-
-  useEffect(() => {
-    if (checkingAuth || !user) return;
-    setError('');
-    api
-      .get('/dashboard/stats')
-      .then(({ data }) => setStats(data))
-      .catch((err) => setError(err.response?.data?.message || 'Could not load dashboard'))
-      .finally(() => setLoading(false));
-  }, [checkingAuth, user]);
 
   const downloadReport = async () => {
     if (!user) return;
-    if (reportPreset === 'custom' && (!reportFrom || !reportTo)) {
-      toast.error('Choose both dates for a custom report range');
+    const rangeValidation = reportRangeSchema.safeParse({ preset: reportPreset, from: reportFrom, to: reportTo });
+    if (!rangeValidation.success) {
+      const errors = getZodFieldErrors(rangeValidation.error);
+      const message = errors.from || errors.to || 'Choose a valid report period.';
+      setRangeError(message);
       return;
     }
 
+    setRangeError('');
     setExporting(true);
     try {
       const rangeMeta = resolveReportRange({ preset: reportPreset, from: reportFrom, to: reportTo });
-      const [summaryResponse, sessionsResponse] = await Promise.all([
+      const [summaryResponse, sessions] = await Promise.all([
         api.get('/reports/summary', { params: rangeMeta.query }),
-        api.get('/sessions', { params: { limit: 1000, sortBy: 'date', order: 'asc', ...rangeMeta.query } })
+        fetchSessionExport({ sortBy: 'date', order: 'asc', ...rangeMeta.query })
       ]);
 
-      if (!sessionsResponse.data.sessions?.length) {
+      if (!sessions.length) {
         toast.error('No sessions found for this period');
         return;
       }
 
+      const { generateProgressReportPdf } = await import('../utils/report.js');
       generateProgressReportPdf({
         userName: user.name,
         rangeMeta,
         summaryPayload: summaryResponse.data,
-        sessions: sessionsResponse.data.sessions
+        sessions
       });
       toast.success('Progress report downloaded');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Could not generate report');
+      toast.error(getErrorMessage(err, 'Could not generate the progress report.'));
     } finally {
       setExporting(false);
     }
   };
 
-  if (loading) return <main className="mx-auto max-w-7xl px-4 py-8"><Loader label="Loading dashboard..." /></main>;
+  if (loading) return <main className="page-shell mx-auto max-w-7xl px-4 sm:px-6"><Loader label="Loading your dashboard..." /></main>;
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-black text-slate-950 dark:text-white">Dashboard</h1>
-        <Link to="/interview" className="btn-primary">Quick Start</Link>
-      </div>
-      {error && <div className="panel mb-4 p-4 text-sm text-rose-300">{error}</div>}
-      {!stats ? <div className="panel p-8 text-center text-slate-500">Dashboard data is unavailable.</div> : (
+    <main className="page-shell mx-auto max-w-7xl px-4 sm:px-6">
+      <PageHeader eyebrow="Your workspace" title={`Welcome${user?.name ? `, ${user.name.split(' ')[0]}` : ''}`} description="A clear view of the work you’ve put into interview practice." action={<Link to="/interview" className="btn-primary"><Video size={16} />Start a practice session</Link>} />
+      {error ? <RequestError title="Dashboard unavailable" message={getErrorMessage(error, 'Your dashboard could not be loaded.')} onRetry={() => refetch()} /> : !stats ? <EmptyState title="Your dashboard is getting ready" description="Your completed sessions and progress will appear here." icon={Video} action={<Link to="/interview" className="btn-primary">Start your first session</Link>} /> : (
       <>
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <ScoreCard
           label="Completed sessions"
           value={stats.totalSessions}
           description="Total saved interview practices."
           showProgress={false}
+          icon={Video}
         />
         <ScoreCard
           label="Average final score"
@@ -93,6 +92,7 @@ const Dashboard = () => {
           description="Your usual performance across sessions."
           scaleLabel="0-100%"
           tone="teal"
+          icon={Activity}
         />
         <ScoreCard
           label="Best final score"
@@ -101,6 +101,7 @@ const Dashboard = () => {
           description="Your strongest session so far."
           scaleLabel="0-100%"
           tone="purple"
+          icon={Award}
         />
         <ScoreCard
           label="Practice streak"
@@ -109,76 +110,75 @@ const Dashboard = () => {
           description="Consecutive days practiced."
           showProgress={false}
           tone="amber"
+          icon={Flame}
         />
       </div>
-      <section className="mt-6 panel p-5">
+      <section className="mt-7 panel overflow-hidden p-5 sm:p-7">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-2xl">
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
-              <FileText size={14} />
-              Download Progress Report
-            </div>
-            <h2 className="text-xl font-black text-slate-950 dark:text-white">Export a polished PDF summary of your interview practice</h2>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-300">
-              Choose a time period and download a branded report with scores, trends, session tables, question performance, and repeated coaching tips.
+            <div className="section-kicker mb-2 inline-flex items-center gap-2"><FileText size={14} />Progress report</div>
+            <h2 className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-2xl">Take your progress with you</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-300">
+              Choose a time period for a downloadable summary of your scores, session history, and recurring coaching notes.
             </p>
           </div>
-          <button className="btn-primary" onClick={downloadReport} disabled={exporting}>
+          <button className="btn-primary shrink-0" type="button" onClick={downloadReport} disabled={exporting}>
             <Download size={16} />
-            {exporting ? 'Preparing PDF...' : 'Download My Progress Report'}
+            {exporting ? 'Preparing report…' : 'Download report'}
           </button>
         </div>
-        <div className="mt-5">
+        <div className="mt-6 border-t border-slate-200 pt-5 dark:border-slate-700">
           <ReportDateRangePicker
             preset={reportPreset}
             from={reportFrom}
             to={reportTo}
-            onPresetChange={setReportPreset}
-            onFromChange={setReportFrom}
-            onToChange={setReportTo}
+            onPresetChange={(value) => { setReportPreset(value); setRangeError(''); }}
+            onFromChange={(value) => { setReportFrom(value); setRangeError(''); }}
+            onToChange={(value) => { setReportTo(value); setRangeError(''); }}
+            error={rangeError}
           />
         </div>
       </section>
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        <div className="panel p-4 lg:col-span-2">
-          <h2 className="mb-4 font-bold text-slate-950 dark:text-white">Score Trend</h2>
+      <div className="mt-7 grid gap-5 lg:grid-cols-3">
+        <div className="panel p-5 sm:p-6 lg:col-span-2">
+          <div className="mb-4"><h2 className="font-semibold tracking-tight text-slate-950 dark:text-white">Score trend</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Your final result for each completed session.</p></div>
           {stats.scoreTrend.length ? (
             <div className="h-72">
               <ResponsiveContainer>
                 <LineChart data={stats.scoreTrend}>
-                  <XAxis dataKey="date" tickFormatter={(d) => new Date(d).toLocaleDateString()} />
-                  <YAxis domain={[0, 100]} />
-                  <Tooltip />
-                  <Line dataKey="score" stroke="#06b6d4" strokeWidth={3} />
+                  <XAxis dataKey="date" tickFormatter={(d) => new Date(d).toLocaleDateString()} {...chartAxisProps} />
+                  <YAxis domain={[0, 100]} {...chartAxisProps} />
+                  <Tooltip {...chartTooltipProps} />
+                  <Line dataKey="score" stroke="#059669" strokeWidth={2.5} dot={{ r: 3, fill: '#059669' }} activeDot={{ r: 5 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           ) : <p className="text-sm text-slate-500">No sessions yet.</p>}
         </div>
-        <div className="panel p-4">
-          <h2 className="mb-4 font-bold text-slate-950 dark:text-white">Emotion Distribution</h2>
+        <div className="panel p-5 sm:p-6">
+          <div className="mb-4"><h2 className="font-semibold tracking-tight text-slate-950 dark:text-white">Expression mix</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Camera snapshots during practice.</p></div>
           {stats.emotionDistribution.length ? (
             <div className="h-72">
               <ResponsiveContainer>
                 <PieChart>
-                  <Pie data={stats.emotionDistribution} dataKey="value" nameKey="emotion" outerRadius={90} label>
+                  <Pie data={stats.emotionDistribution} dataKey="value" nameKey="emotion" outerRadius={90} label={{ fill: 'var(--text-muted)', fontSize: 12 }}>
                     {stats.emotionDistribution.map((entry, index) => <Cell key={entry.emotion} fill={colors[index % colors.length]} />)}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip {...chartTooltipProps} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
           ) : <p className="text-sm text-slate-500">Emotion snapshots appear after practice.</p>}
         </div>
       </div>
-      <section className="mt-6 panel p-4">
-        <h2 className="mb-4 font-bold text-slate-950 dark:text-white">Recent Sessions</h2>
+      <section className="mt-7 panel p-5 sm:p-6">
+        <div className="mb-3 flex items-end justify-between gap-4"><div><h2 className="font-semibold tracking-tight text-slate-950 dark:text-white">Recent sessions</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Pick up where you left off.</p></div><Link to="/history" className="text-sm font-semibold text-emerald-800 hover:underline dark:text-emerald-300">View history</Link></div>
         {stats.recentSessions.length ? (
-          <div className="divide-y divide-slate-200 dark:divide-slate-800">
+          <div className="mt-2 divide-y divide-slate-200 dark:divide-slate-800">
             {stats.recentSessions.map((session) => (
-              <Link key={session._id} to={`/sessions/${session._id}`} className="flex flex-wrap items-center justify-between gap-2 py-3">
-                <span>{session.type} - {session.difficulty} - {formatDate(session.createdAt)}</span>
-                <span className="font-bold text-cyan-600">{session.finalScore}% - Grade {session.grade}</span>
+              <Link key={session._id} to={`/sessions/${session._id}`} className="flex flex-wrap items-center justify-between gap-3 py-4 transition-colors hover:text-emerald-800 dark:hover:text-emerald-300">
+                <span><span className="font-medium text-slate-900 dark:text-white">{session.type} interview</span><span className="mx-2 text-slate-300 dark:text-slate-600">/</span><span className="text-sm text-slate-500 dark:text-slate-400">{session.difficulty} — {formatDate(session.createdAt)}</span></span>
+                <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300">{session.finalScore}% <span className="text-xs">Grade {session.grade}</span></span>
               </Link>
             ))}
           </div>

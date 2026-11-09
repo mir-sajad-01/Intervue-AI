@@ -11,7 +11,10 @@ router.post(
   '/evaluate',
   protect,
   aiLimiter,
-  [body('transcript').trim().isLength({ min: 1 }), body('question').trim().isLength({ min: 1 })],
+  [
+    body('transcript').isString().trim().isLength({ min: 1, max: 12000 }).withMessage('Add an answer between 1 and 12,000 characters.'),
+    body('question').isString().trim().isLength({ min: 1, max: 1000 }).withMessage('A valid interview question is required.')
+  ],
   validate,
   evaluateFeedback
 );

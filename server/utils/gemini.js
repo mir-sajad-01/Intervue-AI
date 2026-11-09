@@ -1,4 +1,5 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { questions as fallbackQuestionBank } from '../data/questions.js';
 
 const sanitizeTopic = (value) =>
   String(value || '')
@@ -191,10 +192,6 @@ const buildGenericSampleAnswer = (question, transcript) => {
 /*
 |--------------------------------------------------------------------------
 | Local fallback scoring
-|
-| IMPORTANT:
-| This is NOT pretending to be Gemini.
-| It is only used when Gemini is genuinely unavailable.
 |--------------------------------------------------------------------------
 */
 
@@ -226,9 +223,7 @@ const getFallbackScores = (question, transcript) => {
   let clarityScore = 5;
 
   /*
-   * ---------------------------------------------------------------
    * Answer length
-   * ---------------------------------------------------------------
    */
 
   if (wordCount <= 3) {
@@ -250,9 +245,7 @@ const getFallbackScores = (question, transcript) => {
   }
 
   /*
-   * ---------------------------------------------------------------
    * Question-answer word overlap
-   * ---------------------------------------------------------------
    */
 
   const questionWords = normalizedQuestion
@@ -278,9 +271,7 @@ const getFallbackScores = (question, transcript) => {
   }
 
   /*
-   * ---------------------------------------------------------------
    * Weak / vague answers
-   * ---------------------------------------------------------------
    */
 
   const weakPhrases = [
@@ -309,9 +300,7 @@ const getFallbackScores = (question, transcript) => {
   }
 
   /*
-   * ---------------------------------------------------------------
    * Very short / incomplete answer
-   * ---------------------------------------------------------------
    */
 
   if (wordCount <= 5) {
@@ -320,9 +309,7 @@ const getFallbackScores = (question, transcript) => {
   }
 
   /*
-   * ---------------------------------------------------------------
    * Basic structure indicators
-   * ---------------------------------------------------------------
    */
 
   const hasExample =
@@ -336,9 +323,7 @@ const getFallbackScores = (question, transcript) => {
   }
 
   /*
-   * ---------------------------------------------------------------
    * Basic sentence structure
-   * ---------------------------------------------------------------
    */
 
   const sentenceCount = answer
@@ -364,7 +349,7 @@ const getFallbackScores = (question, transcript) => {
 |--------------------------------------------------------------------------
 */
 
-const fallbackFeedback = (errorMessage, question, transcript) => {
+const fallbackFeedback = (question, transcript) => {
   const template = getTemplateForQuestion(question);
 
   const scores = getFallbackScores(
@@ -376,7 +361,8 @@ const fallbackFeedback = (errorMessage, question, transcript) => {
     relevanceScore: scores.relevanceScore,
     fluencyScore: scores.fluencyScore,
     clarityScore: scores.clarityScore,
-     evaluationSource: 'fallback',
+
+    evaluationSource: 'fallback',
 
     tips:
       template?.tips || [
@@ -387,9 +373,7 @@ const fallbackFeedback = (errorMessage, question, transcript) => {
 
     sampleAnswer:
       template?.sampleAnswer ||
-      buildGenericSampleAnswer(question, transcript),
-
-    error: errorMessage || null
+      buildGenericSampleAnswer(question, transcript)
   };
 };
 
@@ -397,30 +381,43 @@ const fallbackFeedback = (errorMessage, question, transcript) => {
 /*
 |--------------------------------------------------------------------------
 | Gemini helper
-|
-| Primary:
-|   gemini-3.7-flash
-|
-| Fallback:
-|   gemini-3.6-flash
-|
-| Transient errors such as 503/429 are retried using exponential
-| backoff with jitter.
 |--------------------------------------------------------------------------
+|
+| IMPORTANT:
+| Each Gemini model is tried only ONCE.
+|
+| IMPORTANT:
+| Each Gemini request uses the SDK timeout (20 seconds by default).
+|
 */
 
-const GEMINI_MODELS = [
-  'gemini-3.7-flash',
-  'gemini-3.6-flash'
-];
+const GEMINI_MODELS = {
+  answerEvaluation: [
+    { name: 'gemini-3.5-flash-lite', thinkingLevel: ThinkingLevel.MINIMAL },
+    { name: 'gemini-3.6-flash', thinkingLevel: ThinkingLevel.MINIMAL }
+  ],
+  questionGeneration: [
+    { name: 'gemini-3.6-flash', thinkingLevel: ThinkingLevel.MINIMAL },
+    { name: 'gemini-3.5-flash-lite', thinkingLevel: ThinkingLevel.MINIMAL }
+  ]
+};
 
-const MAX_RETRIES_PER_MODEL = 2;
+const MAX_RETRIES_PER_MODEL = 1;
+
+const getGeminiTimeout = () => {
+  const configuredTimeout = Number(process.env.GEMINI_TIMEOUT_MS);
+  return Number.isFinite(configuredTimeout) && configuredTimeout >= 1_000
+    ? Math.min(configuredTimeout, 30_000)
+    : 20_000;
+};
 
 const sleep = (ms) =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 const isRetryableGeminiError = (error) => {
-  const message = String(error?.message || error || '').toLowerCase();
+  const message = String(
+    error?.message || error || ''
+  ).toLowerCase();
 
   return (
     message.includes('503') ||
@@ -434,39 +431,65 @@ const isRetryableGeminiError = (error) => {
     message.includes('502') ||
     message.includes('504') ||
     message.includes('internal server error') ||
-    message.includes('deadline exceeded')
+    message.includes('deadline exceeded') ||
+    message.includes('timed out') ||
+    message.includes('timeout')
   );
 };
 
-const generateWithGemini = async (prompt, operationName) => {
+
+/*
+|--------------------------------------------------------------------------
+| Generate with Gemini
+|--------------------------------------------------------------------------
+*/
+
+const generateWithGemini = async (
+  prompt,
+  operationName,
+  { models, maxOutputTokens }
+) => {
   if (!process.env.GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY is not configured');
+    throw new Error(
+      'GEMINI_API_KEY is not configured'
+    );
   }
 
-  const genAI = new GoogleGenerativeAI(
-    process.env.GEMINI_API_KEY
-  );
-
+  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const timeout = getGeminiTimeout();
   let lastError = null;
 
-  for (const modelName of GEMINI_MODELS) {
+  for (const { name: modelName, thinkingLevel } of models) {
+
     for (
       let attempt = 1;
       attempt <= MAX_RETRIES_PER_MODEL;
       attempt++
     ) {
+
       try {
         console.log(
-          `[Gemini] ${operationName} | model=${modelName} | attempt=${attempt}`
+          `[Gemini] ${operationName} | model=${modelName} | attempt=${attempt} | timeout=${timeout}ms`
         );
 
-        const model = genAI.getGenerativeModel({
-          model: modelName
+        const result = await genAI.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            thinkingConfig: { thinkingLevel },
+            responseMimeType: 'application/json',
+            maxOutputTokens,
+            httpOptions: { timeout }
+          }
         });
 
-        const result = await model.generateContent(prompt);
+        /*
+         * IMPORTANT:
+         * Do not wait forever for Gemini.
+         * Bound the wait using the configured Gemini timeout.
+         */
 
-        const text = result.response.text();
+        const text = result.text;
 
         if (!text || !text.trim()) {
           throw new Error(
@@ -479,10 +502,13 @@ const generateWithGemini = async (prompt, operationName) => {
         );
 
         return text;
+
       } catch (error) {
+
         lastError = error;
 
-        const retryable = isRetryableGeminiError(error);
+        const retryable =
+          isRetryableGeminiError(error);
 
         console.error(
           `[Gemini] ${operationName} failed | model=${modelName} | attempt=${attempt} | retryable=${retryable}`
@@ -492,30 +518,24 @@ const generateWithGemini = async (prompt, operationName) => {
           `[Gemini] Error: ${error.message}`
         );
 
-        /*
-         * Do NOT retry permanent errors such as:
-         * - invalid API key
-         * - invalid request
-         * - unavailable model
-         */
         if (!retryable) {
           break;
         }
 
-        /*
-         * Exponential backoff:
-         *
-         * attempt 1 -> ~1.5 sec
-         * attempt 2 -> ~3 sec
-         */
-        if (attempt < MAX_RETRIES_PER_MODEL) {
-          const baseDelay = 1500 * Math.pow(2, attempt - 1);
+        if (
+          attempt < MAX_RETRIES_PER_MODEL
+        ) {
+          const baseDelay =
+            500 *
+            Math.pow(2, attempt - 1);
 
-          const jitter = Math.floor(
-            Math.random() * 500
-          );
+          const jitter =
+            Math.floor(
+              Math.random() * 300
+            );
 
-          const delay = baseDelay + jitter;
+          const delay =
+            baseDelay + jitter;
 
           console.log(
             `[Gemini] Waiting ${delay}ms before retry...`
@@ -526,16 +546,14 @@ const generateWithGemini = async (prompt, operationName) => {
       }
     }
 
-    /*
-     * If the first model failed, move to the second Gemini model.
-     */
     console.warn(
       `[Gemini] Switching from ${modelName} to next Gemini model...`
     );
   }
 
-  throw lastError || new Error(
-    'All Gemini models failed'
+  throw (
+    lastError ||
+    new Error('All Gemini models failed')
   );
 };
 
@@ -550,23 +568,6 @@ export const evaluateAnswer = async ({
   question,
   transcript
 }) => {
-  console.log('========== GEMINI CHECK ==========');
-
-  console.log(
-    'GEMINI_API_KEY exists:',
-    !!process.env.GEMINI_API_KEY
-  );
-
-  console.log(
-    'GEMINI_API_KEY length:',
-    process.env.GEMINI_API_KEY
-      ? process.env.GEMINI_API_KEY.length
-      : 0
-  );
-
-  console.log(
-    '=================================='
-  );
 
   const cleanedQuestion =
     sanitizeTopic(question);
@@ -635,46 +636,49 @@ Do not use code fences.
   "sampleAnswer": "sample answer"
 }`;
 
+  /*
+   * No Gemini API key:
+   * use local fallback immediately.
+   */
+
   if (!process.env.GEMINI_API_KEY) {
+
     console.warn(
       'GEMINI_API_KEY missing; using local fallback evaluation.'
     );
 
-    return fallbackFeedback(
-      'GEMINI_API_KEY missing',
-      question,
-      transcript
-    );
+    return fallbackFeedback(question, transcript);
   }
 
   try {
+
     const responseText =
       await generateWithGemini(
         prompt,
-        'answer evaluation'
+        'answer evaluation',
+        { models: GEMINI_MODELS.answerEvaluation, maxOutputTokens: 768 }
       );
 
     const parsed =
       parseGeminiJson(responseText);
 
     const scores = {
-      relevanceScore: clampScore(
-        parsed.relevanceScore
-      ),
+      relevanceScore:
+        clampScore(
+          parsed.relevanceScore
+        ),
 
-      fluencyScore: clampScore(
-        parsed.fluencyScore
-      ),
+      fluencyScore:
+        clampScore(
+          parsed.fluencyScore
+        ),
 
-      clarityScore: clampScore(
-        parsed.clarityScore
-      )
+      clarityScore:
+        clampScore(
+          parsed.clarityScore
+        )
     };
 
-    /*
-     * Make sure Gemini actually returned valid
-     * scores instead of silently turning bad values into 0.
-     */
     const tips =
       Array.isArray(parsed.tips)
         ? parsed.tips
@@ -687,15 +691,13 @@ Do not use code fences.
 
     return {
       ...scores,
+
       evaluationSource: 'gemini',
+
       tips:
         tips.length === 3
           ? tips
-          : fallbackFeedback(
-              'Gemini returned invalid tips',
-              question,
-              transcript
-            ).tips,
+          : fallbackFeedback(question, transcript).tips,
 
       sampleAnswer:
         typeof parsed.sampleAnswer === 'string' &&
@@ -706,36 +708,44 @@ Do not use code fences.
               transcript
             )
     };
+
   } catch (error) {
+
     console.error(
-      `Gemini evaluation failed after retries: ${error.message}`
+      `Gemini evaluation failed; using local fallback: ${error.message}`
     );
 
     /*
      * IMPORTANT:
-     * Gemini failed, so we do NOT pretend Gemini gave a score.
-     * We use the local scoring algorithm instead.
+     *
+     * Gemini failed or timed out.
+     *
+     * Do NOT leave the interview waiting.
+     *
+     * Use the local scoring algorithm
+     * and immediately return a valid result.
      */
-    return fallbackFeedback(
-      error.message,
-      question,
-      transcript
-    );
+
+    return fallbackFeedback(question, transcript);
   }
 };
 
 
 /*
 |--------------------------------------------------------------------------
-| Generate Custom Interview Questions
+| Generate Interview Questions
 |--------------------------------------------------------------------------
 */
 
 export const generateInterviewQuestions = async ({
+  type = 'Custom',
   topic,
   difficulty,
   totalQuestions
 }) => {
+
+  const supportedTypes = ['HR', 'Technical', 'Behavioural', 'Mixed', 'Custom'];
+  const questionType = supportedTypes.includes(type) ? type : 'Mixed';
   const cleanedTopic =
     sanitizeTopic(topic);
 
@@ -744,86 +754,59 @@ export const generateInterviewQuestions = async ({
 
   /*
    * Safe fallback questions.
-   *
-   * These are used only if Gemini is genuinely
-   * unavailable after retries.
    */
-  const fallbackPrompts = [
-    'Tell me about yourself and your background.',
 
-    'Why are you interested in this opportunity?',
+  const fallbackCategoryOrder = {
+    HR: ['HR', 'Behavioural', 'Mixed', 'Technical'],
+    Technical: ['Technical', 'Mixed', 'Behavioural', 'HR'],
+    Behavioural: ['Behavioural', 'HR', 'Mixed', 'Technical'],
+    Mixed: ['HR', 'Technical', 'Behavioural', 'Mixed'],
+    Custom: ['HR', 'Behavioural', 'Technical', 'Mixed']
+  };
+  const shuffle = (items) => {
+    const shuffled = [...items];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+    }
+    return shuffled;
+  };
+  const fallback = () => {
+    const pool = fallbackCategoryOrder[questionType].flatMap((category) =>
+      shuffle(fallbackQuestionBank.filter((question) => question.category === category))
+    );
+    const distinctQuestions = [...new Map(pool.map((question) => [question.text, question])).values()];
 
-    'What are your greatest strengths, and how have you demonstrated them?',
-
-    'Tell me about a challenging situation you faced and how you handled it.',
-
-    'Why should we hire you?',
-
-    'Tell me about a time you worked successfully with a team.',
-
-    'What is one weakness you are currently working to improve?',
-
-    'Where do you see yourself in the next five years?',
-
-    'Tell me about a time you made a mistake and what you learned from it.',
-
-    'Do you have any questions you would like to ask the interviewer?'
-  ];
-
-  const fallback =
-    Array.from(
-      { length: count },
-      (_, index) => ({
-        text:
-          fallbackPrompts[
-            index % fallbackPrompts.length
-          ],
-
-        category: 'Mixed',
-
+    return {
+      source: 'fallback',
+      questions: distinctQuestions.slice(0, count).map((question) => ({
+        text: question.text,
+        category: questionType === 'Custom' ? 'Custom' : question.category,
         difficulty,
-
-        tags: [
-          'custom',
-          'interview'
-        ]
-      })
-    );
-
-  if (!process.env.GEMINI_API_KEY) {
-    console.warn(
-      'GEMINI_API_KEY missing; returning fallback custom questions.'
-    );
-
-    return fallback;
-  }
+        tags: [...new Set([...(question.tags || []), 'offline-fallback'])]
+      }))
+    };
+  };
 
   /*
-   * IMPORTANT:
-   *
-   * The user's input is an interview request,
-   * not necessarily a simple topic.
-   *
-   * Example:
-   *
-   * "I have an EPAM HR interview.
-   *  Take my mock interview."
-   *
-   * Gemini must understand:
-   *
-   * Company = EPAM
-   * Interview = HR
-   * Mode = mock interview
-   *
-   * It must NOT copy the whole sentence into
-   * the generated question.
+   * No API key:
+   * return fallback questions.
    */
 
+  if (!process.env.GEMINI_API_KEY) {
+
+    console.warn(
+      'GEMINI_API_KEY missing; using the bundled question bank as fallback.'
+    );
+
+    return fallback();
+  }
+
+  const topicDescription = cleanedTopic || `${questionType} interview`;
   const prompt = `You are an expert professional interviewer.
 
-The user entered this custom interview request:
-
-"${cleanedTopic}"
+The selected interview type is: ${questionType}
+The user interview topic or role is: "${topicDescription}"
 
 INTERPRET THE USER'S INTENT FIRST.
 
@@ -843,16 +826,18 @@ IMPORTANT RULES:
 2. Do NOT blindly treat the entire input as a topic.
 3. Identify the company, role, interview type, and context when they are present.
 4. If the user mentions a company, tailor questions to that company context when appropriate.
-5. If the user mentions an HR interview, focus on HR and behavioural questions.
-6. If the user mentions a technical interview, focus on technical questions relevant to the role or technologies mentioned.
-7. If the user asks for a mock interview, generate questions as if you are the interviewer.
-8. If the user provides a simple topic such as "React hooks", generate interview questions about that topic.
-9. Never copy the user's entire sentence into a question.
-10. Never create questions such as:
+5. For HR, focus on motivation, communication, teamwork, strengths, and workplace scenarios.
+6. For Technical, focus on practical technical knowledge, problem solving, and the technologies in the topic or role.
+7. For Behavioural, focus on specific past situations and STAR-style prompts.
+8. For Mixed, balance HR, technical, and behavioural questions.
+9. If the user asks for a mock interview, generate questions as if you are the interviewer.
+10. If the user provides a simple topic such as "React hooks", generate interview questions about that topic.
+11. Never copy the user's entire sentence into a question.
+12. Never create questions such as:
    "Describe a practical challenge in [the entire user's sentence]."
-11. Every question must sound natural when spoken by a real interviewer.
-12. Do not explain your reasoning.
-13. Generate exactly ${count} questions.
+13. Every question must sound natural when spoken by a real interviewer.
+14. Do not explain your reasoning.
+15. Generate exactly ${count} distinct questions.
 
 Difficulty:
 ${difficulty}
@@ -878,14 +863,14 @@ The questions must be:
 - suitable for an actual interview`;
 
   try {
-    console.log(
-      `Calling Gemini to generate ${count} custom questions for request: ${cleanedTopic}`
-    );
+
+    console.log(`Calling Gemini to generate ${count} ${questionType} interview questions.`);
 
     const responseText =
       await generateWithGemini(
         prompt,
-        'custom question generation'
+        'interview question generation',
+        { models: GEMINI_MODELS.questionGeneration, maxOutputTokens: 2048 }
       );
 
     const parsed =
@@ -896,41 +881,36 @@ The questions must be:
         ? parsed.questions
         : [];
 
-    const usable =
-      questions
-        .map((question) =>
-          String(question || '').trim()
-        )
-        .filter(Boolean)
-        .slice(0, count);
+    const seen = new Set();
+    const usable = questions
+      .map((question) => String(question || '').trim())
+      .filter((question) => {
+        const normalized = normalizeForMatch(question);
+        if (!normalized || seen.has(normalized)) return false;
+        seen.add(normalized);
+        return true;
+      })
+      .slice(0, count);
 
     if (usable.length < count) {
-      console.warn(
-        `Gemini returned only ${usable.length}/${count} usable questions. Using safe fallback.`
-      );
 
-      return fallback;
+      console.warn(`Gemini returned ${usable.length}/${count} distinct questions; using the bundled fallback bank.`);
+      return fallback();
     }
 
-    return usable.map(
-      (textValue) => ({
-        text: textValue,
-
-        category: 'Mixed',
-
+    return {
+      source: 'gemini',
+      questions: usable.map((text) => ({
+        text,
+        category: questionType,
         difficulty,
+        tags: [questionType.toLowerCase(), 'generated']
+      }))
+    };
 
-        tags: [
-          'custom',
-          'interview'
-        ]
-      })
-    );
   } catch (error) {
-    console.error(
-      `Gemini custom question generation failed after retries: ${error.message}`
-    );
 
-    return fallback;
+    console.error(`Gemini question generation failed; using the bundled fallback bank: ${error.message}`);
+    return fallback();
   }
 };
